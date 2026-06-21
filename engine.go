@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -93,7 +94,7 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 			return
 		}
 		time.Sleep(10 * time.Second)
-		if e.sendImageURL(ctx, lead, imgProfile, "") != nil {
+		if e.sendImageURL(ctx, lead, imgProfile, "", false) != nil {
 			return
 		}
 		time.Sleep(5 * time.Second)
@@ -149,11 +150,12 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 		time.Sleep(30 * time.Second)
 		e.sendCallSequence(ctx, lead)
 
-	case stepCallArmed: // vídeo-chamada armada, lead mandou msg em vez de ligar
-		log.Printf("[engine] lead %d mandou msg com call armada (step=call_armed)", lead.ID)
+	case stepCallArmed, stepCallArmed2, stepCallArmed3, stepCallArmed4:
+		// Lead mandou msg em vez de ligar — log mas não avança
+		log.Printf("[engine] lead %d mandou msg com call armada (step=%s)", lead.ID, lead.Step)
 
-	case stepCallExpired: // lead não ligou — aguardando follow-up
-		log.Printf("[engine] lead %d em call_expired, aguardando follow-up copy", lead.ID)
+	case stepCallGiveUp: // desistiu de ligar
+		log.Printf("[engine] lead %d em call_give_up, mandou msg", lead.ID)
 
 	case stepAwaitQ5: // respondeu ao "topa?" → próxima fase da copy
 		log.Printf("[engine] lead %d respondeu ao 'topa?' (step=await_q5, próxima copy pendente)", lead.ID)
@@ -290,17 +292,17 @@ func (e *Engine) sendAudioURL(ctx context.Context, lead *Lead, audioURL string) 
 	return nil
 }
 
-// sendImageURL — adquire o gate e envia imagem via URL com caption opcional.
-func (e *Engine) sendImageURL(ctx context.Context, lead *Lead, imageURL, caption string) error {
+// sendImageURL — adquire o gate e envia imagem via URL com caption e viewOnce opcionais.
+func (e *Engine) sendImageURL(ctx context.Context, lead *Lead, imageURL, caption string, viewOnce bool) error {
 	e.gate.Acquire(lead.SessionID, lead.Phone)
 
-	if err := e.api.SendImageURL(ctx, lead.SessionID, lead.Phone, imageURL, caption); err != nil {
+	if err := e.api.SendImageURL(ctx, lead.SessionID, lead.Phone, imageURL, caption, viewOnce); err != nil {
 		e.gate.Done(lead.SessionID, lead.Phone)
 		log.Printf("[engine] send image lead %d: %v", lead.ID, err)
 		return err
 	}
 	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[image] "+caption, "image", "", lead.SessionID)
-	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "image", "url": imageURL})
+	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "image", "url": imageURL, "view_once": viewOnce})
 
 	e.gate.Done(lead.SessionID, lead.Phone)
 	return nil
@@ -380,29 +382,104 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 	if ev.Phone != "" {
 		lead, err = e.db.GetLeadByPhone(ctx, ev.Phone, ev.SessionID)
 	} else {
-		// Expired: acha o lead que está esperando chamada nessa sessão
-		lead, err = e.db.GetLeadByStep(ctx, ev.SessionID, stepCallArmed)
+		// Expired: busca o lead em qualquer step "call_armed*"
+		for _, step := range []string{stepCallArmed, stepCallArmed2, stepCallArmed3, stepCallArmed4} {
+			lead, err = e.db.GetLeadByStep(ctx, ev.SessionID, step)
+			if err == nil {
+				break
+			}
+		}
 	}
 	if err != nil {
 		log.Printf("[engine] call event %s: get lead: %v", ev.Event, err)
 		return
 	}
-	if lead.Step != stepCallArmed {
-		log.Printf("[engine] call event %s para lead %d mas step=%s (ignorando)", ev.Event, lead.ID, lead.Step)
-		return
-	}
 
-	e.db.LogEvent(ctx, lead.ID, "call", map[string]any{"event": ev.Event, "phone": ev.Phone})
+	e.db.LogEvent(ctx, lead.ID, "call", map[string]any{"event": ev.Event, "phone": ev.Phone, "step": lead.Step})
 
 	switch ev.Event {
 	case "accepted":
-		log.Printf("[engine] lead %d ligou — chamada aceita, continuando copy", lead.ID)
-		e.sendPostCallSequence(ctx, lead)
+		// Qualquer tentativa — lead ligou → continua a copy principal
+		if strings.HasPrefix(lead.Step, "call_armed") {
+			log.Printf("[engine] lead %d ligou (step=%s) — continuando copy", lead.ID, lead.Step)
+			e.sendPostCallSequence(ctx, lead)
+		}
 	case "expired":
-		log.Printf("[engine] lead %d não ligou em 5 min — follow-up pendente", lead.ID)
-		// TODO: follow-up de "não ligou" (próxima copy)
-		e.goTo(ctx, lead, "in_flow", stepCallExpired)
+		switch lead.Step {
+		case stepCallArmed:
+			log.Printf("[engine] lead %d não ligou (tentativa 1) — follow-up 1", lead.ID)
+			e.sendCallFollowUp1(ctx, lead)
+		case stepCallArmed2:
+			log.Printf("[engine] lead %d não ligou (tentativa 2) — follow-up 2", lead.ID)
+			e.sendCallFollowUp2(ctx, lead)
+		case stepCallArmed3:
+			log.Printf("[engine] lead %d não ligou (tentativa 3) — follow-up 3 (último)", lead.ID)
+			e.sendCallFollowUp3(ctx, lead)
+		case stepCallArmed4:
+			log.Printf("[engine] lead %d não ligou (tentativa 4) — desistindo", lead.ID)
+			e.goTo(ctx, lead, "lost", stepCallGiveUp)
+		}
 	}
+}
+
+// sendCallFollowUp1 — 1ª vez que não ligou.
+func (e *Engine) sendCallFollowUp1(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgCf1a) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf1b) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf1c) != nil { return }
+	// Re-arma vídeo-chamada
+	e.armVideoCall(ctx, lead, videoCall1)
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgCf1d) != nil { return }
+	time.Sleep(12 * time.Second)
+	if e.send(ctx, lead, msgCf1e) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf1f) != nil { return }
+	e.goTo(ctx, lead, "in_flow", stepCallArmed2)
+}
+
+// sendCallFollowUp2 — 2ª vez que não ligou.
+func (e *Engine) sendCallFollowUp2(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgCf2a) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf2b) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf2c) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgCf2d) != nil { return }
+	time.Sleep(10 * time.Second)
+	// Re-arma vídeo-chamada
+	e.armVideoCall(ctx, lead, videoCall1)
+	if e.send(ctx, lead, msgCf2e) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf2f) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf2g) != nil { return }
+	e.goTo(ctx, lead, "in_flow", stepCallArmed3)
+}
+
+// sendCallFollowUp3 — 3ª vez que não ligou (último follow-up).
+func (e *Engine) sendCallFollowUp3(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgCf3a) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf3b) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf3c) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.sendImageURL(ctx, lead, imgViewOnce, "", true) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf3d) != nil { return }
+	time.Sleep(20 * time.Second)
+	if e.send(ctx, lead, msgCf3e) != nil { return }
+	time.Sleep(20 * time.Second)
+	if e.send(ctx, lead, msgCf3f) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCf3g) != nil { return }
+	// Última tentativa de vídeo-chamada
+	e.armVideoCall(ctx, lead, videoCall1)
+	e.goTo(ctx, lead, "in_flow", stepCallArmed4)
 }
 
 // sendPostCallSequence — sequência pós-chamada de vídeo.

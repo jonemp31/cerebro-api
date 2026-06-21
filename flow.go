@@ -79,7 +79,8 @@ const (
 
 // Imagens do funil.
 const (
-	imgProfile = "https://s3.crushzap.com/painel/copy1/yasfoto1.jpg"
+	imgProfile  = "https://s3.crushzap.com/painel/copy1/yasfoto1.jpg"
+	imgViewOnce = "https://s3.crushzap.com/painel/copy1/yasfoto4.jpg"
 )
 
 // Vídeos do funil (chamada de vídeo).
@@ -96,18 +97,21 @@ const (
 
 // Passos (steps) do funil.
 const (
-	stepNew        = ""              // lead novo / primeiro contato
-	stepAwaitQ1    = "await_q1"      // mandou "gostou?", aguarda resposta
-	stepAwaitQ1Fu1 = "await_q1_fu1"  // 1° follow-up enviado, aguarda resposta
-	stepAwaitQ1Fu2 = "await_q1_fu2"  // 2° follow-up enviado (ou dorme)
-	stepAwaitQ2    = "await_q2"      // mandou "vc tá sozinho?", aguarda resposta
-	stepAwaitQ2Fu1 = "await_q2_fu1"  // follow-up "?" enviado (dorme)
-	stepAwaitQ3    = "await_q3"      // mandou "vou te dar um presente", aguarda resposta
-	stepAwaitQ4    = "await_q4"      // mandou "só pq gostei de vc", aguarda resposta (timer 3min)
-	stepCallArmed   = "call_armed"    // vídeo-chamada armada, aguardando lead ligar
-	stepCallExpired = "call_expired"  // lead não ligou em 5 min, aguarda follow-up
-	stepAwaitQ5     = "await_q5"      // mandou "topa?", aguarda resposta
-	stepPixSent     = "pix_sent"      // mandou o Pix, aguardando pagamento
+	stepNew         = ""               // lead novo / primeiro contato
+	stepAwaitQ1     = "await_q1"       // mandou "gostou?", aguarda resposta
+	stepAwaitQ1Fu1  = "await_q1_fu1"   // 1° follow-up enviado, aguarda resposta
+	stepAwaitQ1Fu2  = "await_q1_fu2"   // 2° follow-up enviado (ou dorme)
+	stepAwaitQ2     = "await_q2"       // mandou "vc tá sozinho?", aguarda resposta
+	stepAwaitQ2Fu1  = "await_q2_fu1"   // follow-up "?" enviado (dorme)
+	stepAwaitQ3     = "await_q3"       // mandou "vou te dar um presente", aguarda resposta
+	stepAwaitQ4     = "await_q4"       // mandou "só pq gostei de vc", aguarda resposta (timer 3min)
+	stepCallArmed   = "call_armed"     // vídeo-chamada armada — tentativa 1
+	stepCallArmed2  = "call_armed_2"   // tentativa 2
+	stepCallArmed3  = "call_armed_3"   // tentativa 3
+	stepCallArmed4  = "call_armed_4"   // tentativa 4 (última)
+	stepCallGiveUp  = "call_give_up"   // desistiu — lead não ligou em nenhuma tentativa
+	stepAwaitQ5     = "await_q5"       // mandou "topa?", aguarda resposta
+	stepPixSent     = "pix_sent"       // mandou o Pix, aguardando pagamento
 )
 
 // ── Follow-ups do await_q1 ──────────────────────────────────────────────────
@@ -136,4 +140,38 @@ const (
 	msgComebackA = "até q enfim né rsrs"
 	msgComebackB = "achei q tinha me abandonado aqui rs"
 	msgComebackC = "faz isso mais n pfv tá"
+)
+
+// ── Follow-ups de chamada (lead não ligou) ──────────────────────────────────
+
+// Call follow-up 1 — 1ª vez que expirou
+const (
+	msgCf1a = "poxa amor"
+	msgCf1b = "não vai me ligar não?"
+	msgCf1c = "to aqui te esperando, me liga vai"
+	msgCf1d = "rapidinho"
+	msgCf1e = "só pra vc me ver vai"
+	msgCf1f = "n tenho mto tempo"
+)
+
+// Call follow-up 2 — 2ª vez que expirou
+const (
+	msgCf2a = "amor"
+	msgCf2b = "ta aí?"
+	msgCf2c = "prometo que"
+	msgCf2d = "você não vai se arrepender"
+	msgCf2e = "me liga de chamada de vídeo"
+	msgCf2f = "aqui pra mim agora"
+	msgCf2g = "vai?"
+)
+
+// Call follow-up 3 — 3ª vez que expirou (último)
+const (
+	msgCf3a = "bom"
+	msgCf3b = "fiquei te esperando aqui"
+	msgCf3c = "e vc n quis, né?"
+	msgCf3d = "perdeu rs"
+	msgCf3e = "agora só mais tarde"
+	msgCf3f = "nos falamos dps"
+	msgCf3g = "bjo"
 )

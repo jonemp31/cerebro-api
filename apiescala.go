@@ -47,12 +47,15 @@ func (c *APIClient) SendAudioURL(ctx context.Context, sessionID, phone, audioURL
 	return c.postForm(ctx, fmt.Sprintf("/sessions/%s/send/audio", sessionID), form)
 }
 
-// SendImageURL — envia imagem via URL com caption opcional.
-func (c *APIClient) SendImageURL(ctx context.Context, sessionID, phone, imageURL, caption string) error {
+// SendImageURL — envia imagem via URL com caption e viewOnce opcionais.
+func (c *APIClient) SendImageURL(ctx context.Context, sessionID, phone, imageURL, caption string, viewOnce bool) error {
 	form := url.Values{
 		"phone":   {phone},
 		"url":     {imageURL},
 		"caption": {caption},
+	}
+	if viewOnce {
+		form.Set("view_once", "true")
 	}
 	return c.postForm(ctx, fmt.Sprintf("/sessions/%s/send/image", sessionID), form)
 }
