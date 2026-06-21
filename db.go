@@ -187,23 +187,55 @@ func (d *DB) InsertPayment(ctx context.Context, leadID int64, gateway, chargeID 
 	return err
 }
 
-// GetPendingPayment — retorna o charge_id do pagamento pendente mais recente do lead.
-func (d *DB) GetPendingPayment(ctx context.Context, leadID int64) (string, error) {
-	var chargeID string
-	err := d.pool.QueryRow(ctx,
-		`SELECT gateway_charge_id FROM payments
-		 WHERE lead_id=$1 AND status='pending'
-		 ORDER BY created_at DESC LIMIT 1`, leadID).Scan(&chargeID)
-	return chargeID, err
+// PendingPayment — info do pagamento pendente pra consulta.
+type PendingPayment struct {
+	ID          int64
+	AmountCents int
+	CreatedAt   time.Time
 }
 
-// UpdatePaymentStatus — atualiza o status de um pagamento (paid, expired, cancelled).
-func (d *DB) UpdatePaymentStatus(ctx context.Context, chargeID, status string) error {
+// GetPendingPaymentInfo — retorna id, valor e data do pagamento pendente mais recente.
+func (d *DB) GetPendingPaymentInfo(ctx context.Context, leadID int64) (*PendingPayment, error) {
+	var p PendingPayment
+	err := d.pool.QueryRow(ctx,
+		`SELECT id, amount_cents, created_at FROM payments
+		 WHERE lead_id=$1 AND status='pending'
+		 ORDER BY created_at DESC LIMIT 1`, leadID).
+		Scan(&p.ID, &p.AmountCents, &p.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// UpdatePaymentStatusByID — atualiza o status de um pagamento pelo ID interno.
+func (d *DB) UpdatePaymentStatusByID(ctx context.Context, paymentID int64, status string) error {
 	q := `UPDATE payments SET status=$2`
 	if status == "paid" {
 		q += `, paid_at=now()`
 	}
-	q += ` WHERE gateway_charge_id=$1`
-	_, err := d.pool.Exec(ctx, q, chargeID, status)
+	q += ` WHERE id=$1`
+	_, err := d.pool.Exec(ctx, q, paymentID, status)
 	return err
+}
+
+// GetUsedCentsInRange — retorna os amount_cents usados nos últimos N minutos dentro do range.
+func (d *DB) GetUsedCentsInRange(ctx context.Context, minCents, maxCents, windowMinutes int) ([]int, error) {
+	rows, err := d.pool.Query(ctx,
+		`SELECT amount_cents FROM payments
+		 WHERE created_at >= NOW() - INTERVAL '1 minute' * $1
+		 AND amount_cents BETWEEN $2 AND $3`,
+		windowMinutes, minCents, maxCents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var used []int
+	for rows.Next() {
+		var c int
+		if err := rows.Scan(&c); err == nil {
+			used = append(used, c)
+		}
+	}
+	return used, nil
 }

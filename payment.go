@@ -5,116 +5,43 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 )
 
-// PaymentClient — cliente do gateway de pagamento (Nexus Pay).
+// PaymentClient — cliente de consulta de pagamento.
 type PaymentClient struct {
-	createURL string // POST: cria cobrança Pix
-	checkURL  string // GET:  consulta status
-	http      *http.Client
+	checkURL string // POST: consulta status do PIX
+	http     *http.Client
 }
 
-// PixCharge — resposta da criação de cobrança.
-type PixCharge struct {
-	ID           string  `json:"id"`
-	PixCopiaCola string  `json:"pix_copia_cola"`
-	Amount       float64 `json:"amount"`
-	Status       string  `json:"status"`
-}
-
-func NewPaymentClient(createURL, checkURL string) *PaymentClient {
+func NewPaymentClient(checkURL string) *PaymentClient {
 	return &PaymentClient{
-		createURL: createURL,
-		checkURL:  checkURL,
-		http:      &http.Client{Timeout: 30 * time.Second},
+		checkURL: checkURL,
+		http:     &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// CreateCharge — cria uma cobrança Pix no gateway.
-func (c *PaymentClient) CreateCharge(ctx context.Context, phone string, amount float64, description string) (*PixCharge, error) {
+// CheckStatus — consulta o status de um PIX via webhook.
+// Envia data, hora, phone e valor; recebe paid = aprovado|aguardando|expirado.
+func (c *PaymentClient) CheckStatus(ctx context.Context, phone string, amount float64, createdAt time.Time) (string, error) {
+	// Converte pra horário de Brasília
+	loc, _ := time.LoadLocation("America/Sao_Paulo")
+	br := createdAt.In(loc)
+
 	body, _ := json.Marshal(map[string]any{
-		"amount":      amount,
-		"description": description,
-		"external_id": phone,
+		"data":  br.Format("02/01/2006"), // DD/MM/YYYY
+		"hora":  br.Format("15:04"),      // HH:MM
+		"phone": phone,
+		"valor": amount,
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.createURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("create charge request: %w", err)
-	}
-	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("create charge HTTP %d: %s", resp.StatusCode, string(raw))
-	}
-
-	// O gateway pode retornar objeto {"success":...} ou array [{"success":...}].
-	// Tratamos os dois formatos.
-	raw = bytes.TrimSpace(raw)
-	var tx PixCharge
-	if len(raw) > 0 && raw[0] == '[' {
-		// Array: [{"success":true,"transaction":{...}}]
-		var arr []struct {
-			Success     bool      `json:"success"`
-			Transaction PixCharge `json:"transaction"`
-		}
-		if err := json.Unmarshal(raw, &arr); err != nil {
-			return nil, fmt.Errorf("parse charge response (array): %w (body: %s)", err, string(raw))
-		}
-		if len(arr) == 0 || !arr[0].Success {
-			return nil, fmt.Errorf("charge creation failed (body: %s)", string(raw))
-		}
-		tx = arr[0].Transaction
-	} else {
-		// Objeto: {"success":true,"transaction":{...}}
-		var obj struct {
-			Success     bool      `json:"success"`
-			Transaction PixCharge `json:"transaction"`
-		}
-		if err := json.Unmarshal(raw, &obj); err != nil {
-			return nil, fmt.Errorf("parse charge response (object): %w (body: %s)", err, string(raw))
-		}
-		if !obj.Success {
-			return nil, fmt.Errorf("charge creation failed (body: %s)", string(raw))
-		}
-		tx = obj.Transaction
-	}
-	// Sanitiza pix_copia_cola e ID: remove BOM, zero-width chars, espaços, quebras
-	tx.PixCopiaCola = sanitizePix(tx.PixCopiaCola)
-	tx.ID = strings.TrimSpace(tx.ID)
-	return &tx, nil
-}
-
-// sanitizePix — remove BOM, caracteres invisíveis, espaços e quebras de linha.
-func sanitizePix(s string) string {
-	s = strings.TrimSpace(s)
-	// BOM (U+FEFF)
-	s = strings.ReplaceAll(s, "\uFEFF", "")
-	// Zero-width chars: U+200B (zero-width space), U+200C (ZWNJ), U+200D (ZWJ), U+2060 (word joiner)
-	for _, c := range []string{"\u200B", "\u200C", "\u200D", "\u2060"} {
-		s = strings.ReplaceAll(s, c, "")
-	}
-	// Carriage return / newline residuais
-	s = strings.ReplaceAll(s, "\r", "")
-	s = strings.ReplaceAll(s, "\n", "")
-	return s
-}
-
-// CheckStatus — consulta o status de uma cobrança pelo ID.
-func (c *PaymentClient) CheckStatus(ctx context.Context, chargeID string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.checkURL+"?id="+chargeID, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.checkURL, bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("check status request: %w", err)
@@ -122,10 +49,19 @@ func (c *PaymentClient) CheckStatus(ctx context.Context, chargeID string) (strin
 	defer resp.Body.Close()
 
 	var result struct {
-		Status string `json:"status"`
+		Paid string `json:"paid"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", fmt.Errorf("parse status response: %w", err)
 	}
-	return result.Status, nil
+
+	// Normaliza a resposta
+	switch result.Paid {
+	case "aprovado":
+		return "paid", nil
+	case "expirado":
+		return "expired", nil
+	default:
+		return "pending", nil
+	}
 }

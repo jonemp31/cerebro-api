@@ -112,11 +112,14 @@ const (
 	imgUpsellApp = "https://s3.crushzap.com/painel/copy1/yasapp.png"
 )
 
-// Dados do Pix (copia-e-cola enviado pelo botão Pix como "chave aleatória").
+// Dados do Pix.
 const (
-	pixKeyType = "EVP" // EVP = chave aleatória
-	pixName    = "🔒 PIX COPIA E COLA"
-	pixKey     = "00020126360014BR.GOV.BCB.PIX011440066967000190520400005303986540530.005802BR5901N6001C62100506Yasmin63048B98"
+	pixKeyType   = "EVP"                 // tipo da chave no sendPixKeyMessage
+	pixName      = "🔒 PIX COPIA E COLA" // nome exibido no card
+	// Geração EMV local
+	pixChave     = "40066967000190"      // chave PIX (CNPJ)
+	pixRecebedor = "MCEMPDIGITAIS"       // nome do recebedor
+	pixCidade    = "Campinas"            // cidade
 )
 
 // Passos (steps) do funil.

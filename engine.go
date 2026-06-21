@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
-	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -361,23 +359,6 @@ func (e *Engine) send(ctx context.Context, lead *Lead, text string) error {
 	return nil
 }
 
-// sendPix — adquire o gate, "digitando..." curto e envia o card de Pix.
-func (e *Engine) sendPix(ctx context.Context, lead *Lead) error {
-	e.gate.Acquire(lead.SessionID, lead.Phone)
-
-	e.typing(ctx, lead, cfgTypingBase)
-	if err := e.api.SendPix(ctx, lead.SessionID, lead.Phone, pixKeyType, pixName, pixKey, ""); err != nil {
-		e.gate.Done(lead.SessionID, lead.Phone)
-		log.Printf("[engine] send pix lead %d: %v", lead.ID, err)
-		return err
-	}
-	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[pix]", "pix", "", lead.SessionID)
-	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "pix"})
-
-	e.gate.Done(lead.SessionID, lead.Phone)
-	return nil
-}
-
 // sendAudioURL — adquire o gate e envia áudio via URL.
 // A api-escala baixa o arquivo e simula a gravação automaticamente.
 func (e *Engine) sendAudioURL(ctx context.Context, lead *Lead, audioURL string) error {
@@ -528,44 +509,58 @@ func (e *Engine) sendPixSequence(ctx context.Context, lead *Lead) {
 	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), nil)
 }
 
-// sendDynamicPix — cria cobrança com valor 29.01–29.99 e envia.
+// sendDynamicPix — gera PIX local com centavos únicos (range 29.01–30.99) e envia.
 func (e *Engine) sendDynamicPix(ctx context.Context, lead *Lead) error {
-	return e.sendDynamicPixAmount(ctx, lead, 29.01, 29.99)
+	return e.sendDynamicPixAmount(ctx, lead, 29.01, 30.99)
 }
 
-// sendDynamicPixAmount — cria cobrança no gateway com valor aleatório e envia a chave Pix.
+// sendDynamicPixAmount — gera PIX EMV local com centavos únicos e envia.
+// Aloca o próximo centavo livre dentro do range nos últimos 29 min.
 func (e *Engine) sendDynamicPixAmount(ctx context.Context, lead *Lead, minAmount, maxAmount float64) error {
-	amount := minAmount + rand.Float64()*(maxAmount-minAmount)
-	amount = math.Round(amount*100) / 100
+	minCents := int(minAmount * 100)
+	maxCents := int(maxAmount * 100)
 
-	charge, err := e.pay.CreateCharge(ctx, lead.Phone, amount, "Oferta1")
-	if err != nil {
-		log.Printf("[engine] create charge lead %d: %v", lead.ID, err)
-		return err
+	// Busca centavos já usados nos últimos 29 min
+	usedCents, _ := e.db.GetUsedCentsInRange(ctx, minCents, maxCents, 29)
+	usedSet := make(map[int]bool, len(usedCents))
+	for _, c := range usedCents {
+		usedSet[c] = true
 	}
-	log.Printf("[engine] charge criada: lead=%d amount=%.2f charge_id=%s", lead.ID, amount, charge.ID)
+
+	// Pega o próximo livre
+	amountCents := minCents
+	for c := minCents; c <= maxCents; c++ {
+		if !usedSet[c] {
+			amountCents = c
+			break
+		}
+	}
+	amount := float64(amountCents) / 100.0
+
+	// Gera o código EMV localmente
+	emv := generatePixEMV(pixChave, pixRecebedor, pixCidade, lead.Phone, amount)
+	log.Printf("[engine] PIX gerado: lead=%d amount=%.2f txid=%s", lead.ID, amount, lead.Phone)
 
 	// Salva no banco
-	amountCents := int(amount * 100)
-	_ = e.db.InsertPayment(ctx, lead.ID, "nexus", charge.ID, amountCents, charge.PixCopiaCola)
+	_ = e.db.InsertPayment(ctx, lead.ID, "pix_local", lead.Phone, amountCents, emv)
 
-	// Envia via WhatsApp com a chave dinâmica
+	// Envia via WhatsApp (sendPixKeyMessage com EVP + código EMV como key)
 	e.gate.Acquire(lead.SessionID, lead.Phone)
 	e.typing(ctx, lead, cfgTypingBase)
-	if err := e.api.SendPix(ctx, lead.SessionID, lead.Phone, "EVP", pixName, charge.PixCopiaCola, ""); err != nil {
+	if err := e.api.SendPix(ctx, lead.SessionID, lead.Phone, pixKeyType, pixName, emv, ""); err != nil {
 		e.gate.Done(lead.SessionID, lead.Phone)
-		log.Printf("[engine] send dynamic pix lead %d: %v", lead.ID, err)
+		log.Printf("[engine] send pix lead %d: %v", lead.ID, err)
 		return err
 	}
 	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[pix]", "pix", "", lead.SessionID)
-	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "pix", "charge_id": charge.ID, "amount": amount})
+	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "pix", "amount": amount, "emv": emv})
 	e.gate.Done(lead.SessionID, lead.Phone)
 	return nil
 }
 
-// checkPayment — consulta o status do pagamento no gateway.
+// checkPayment — consulta o status do pagamento via webhook.
 func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
-	chargeID, err := e.db.GetPendingPayment(ctx, lead.ID)
+	pp, err := e.db.GetPendingPaymentInfo(ctx, lead.ID)
 	if err != nil {
 		log.Printf("[engine] get pending payment lead %d: %v", lead.ID, err)
 		return
@@ -581,21 +576,22 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 		}
 	}
 
-	status, err := e.pay.CheckStatus(ctx, chargeID)
+	amount := float64(pp.AmountCents) / 100.0
+	status, err := e.pay.CheckStatus(ctx, lead.Phone, amount, pp.CreatedAt)
 	if err != nil {
 		log.Printf("[engine] check payment lead %d: %v", lead.ID, err)
 		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(checkCount)})
 		return
 	}
 
-	log.Printf("[engine] payment check lead=%d charge=%s status=%s count=%d step=%s", lead.ID, chargeID, status, checkCount, lead.Step)
+	log.Printf("[engine] payment check lead=%d amount=%.2f status=%s count=%d step=%s", lead.ID, amount, status, checkCount, lead.Step)
 
 	switch status {
 	case "paid":
 		_ = e.db.CancelActions(ctx, lead.ID)
-		_ = e.db.UpdatePaymentStatus(ctx, chargeID, "paid")
-		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "charge_id": chargeID})
-		log.Printf("[engine] \xf0\x9f\x92\xb0 lead %d PAGOU! charge=%s", lead.ID, chargeID)
+		_ = e.db.UpdatePaymentStatusByID(ctx, pp.ID, "paid")
+		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "amount": amount})
+		log.Printf("[engine] \xf0\x9f\x92\xb0 lead %d PAGOU! amount=%.2f", lead.ID, amount)
 		if lead.Step == stepUpsellPixSent {
 			e.sendUpsellPaidSequence(ctx, lead)
 		} else {
@@ -605,12 +601,10 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 	case "pending":
 		nextCount := checkCount + 1
 
-		// 2\xc2\xb0 PIX: ap\xc3\xb3s 20 checks (~10 min), envia follow-up (uma vez)
 		if lead.Step == stepPixSent2 && nextCount >= 20 {
 			e.sendPixRetryFollowUp(ctx, lead)
 		}
 
-		// Upsell PIX: follow-up "sumiu?" após 20 checks (~10 min)
 		if lead.Step == stepUpsellPixSent && nextCount >= 20 {
 			e.send(ctx, lead, msgUpFu)
 			e.goTo(ctx, lead, "awaiting_payment", stepUpsellPixSentFu)
@@ -618,16 +612,15 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 
 		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(nextCount)})
 
-	case "expired", "cancelled":
-		_ = e.db.UpdatePaymentStatus(ctx, chargeID, status)
-		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": status, "charge_id": chargeID})
+	case "expired":
+		_ = e.db.UpdatePaymentStatusByID(ctx, pp.ID, "expired")
+		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "expired", "amount": amount})
 
 		switch lead.Step {
 		case stepPixSent:
-			// 1\xc2\xb0 PIX expirou \xe2\x86\x92 retry com valor menor
-			log.Printf("[engine] lead %d PIX expirou \xe2\x80\x94 enviando retry", lead.ID)
+			log.Printf("[engine] lead %d PIX expirou — enviando retry", lead.ID)
 			e.sendPixRetrySequence(ctx, lead)
-				case stepPixSent2, stepPixSent2Fu:
+		case stepPixSent2, stepPixSent2Fu:
 			log.Printf("[engine] lead %d 2° PIX expirou — desistindo", lead.ID)
 			e.goTo(ctx, lead, "lost", stepPixExpired)
 		case stepUpsellPixSent:
@@ -657,7 +650,7 @@ func (e *Engine) sendPixRetrySequence(ctx context.Context, lead *Lead) {
 	time.Sleep(31 * time.Second)
 
 	// Gera novo PIX com valor menor (20.01\xe2\x80\x9320.99)
-	if e.sendDynamicPixAmount(ctx, lead, 20.01, 20.99) != nil { return }
+	if e.sendDynamicPixAmount(ctx, lead, 20.01, 21.99) != nil { return }
 
 	time.Sleep(22 * time.Second)
 	if e.send(ctx, lead, msgPixRetryF) != nil { return }
@@ -797,7 +790,7 @@ func (e *Engine) sendPostDeliverySequence(ctx context.Context, lead *Lead) {
 	time.Sleep(10 * time.Second)
 
 	// Envia PIX upsell (R$14.19–14.99)
-	if e.sendDynamicPixAmount(ctx, lead, 14.19, 14.99) != nil { return }
+	if e.sendDynamicPixAmount(ctx, lead, 14.01, 15.99) != nil { return }
 	e.goTo(ctx, lead, "awaiting_payment", stepUpsellPixSent)
 	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(0)})
 }
