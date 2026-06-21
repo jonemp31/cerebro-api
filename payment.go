@@ -49,14 +49,14 @@ func (c *PaymentClient) CheckStatus(ctx context.Context, phone string, amount fl
 	defer resp.Body.Close()
 
 	var result struct {
-		Paid string `json:"paid"`
+		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", fmt.Errorf("parse status response: %w", err)
 	}
 
 	// Normaliza a resposta
-	switch result.Paid {
+	switch result.Status {
 	case "aprovado":
 		return "paid", nil
 	case "expirado":
