@@ -452,7 +452,7 @@ func (e *Engine) sendPixSequence(ctx context.Context, lead *Lead) {
 	}
 	e.goTo(ctx, lead, "awaiting_payment", stepPixSent)
 	// Inicia polling de pagamento a cada ~20s
-	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(20*time.Second), nil)
+	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), nil)
 }
 
 // sendDynamicPix — cria cobrança no gateway e envia a chave Pix dinâmica.
@@ -498,7 +498,7 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead) {
 	if err != nil {
 		log.Printf("[engine] check payment lead %d: %v", lead.ID, err)
 		// Reagenda em caso de erro de rede
-		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(20*time.Second), nil)
+		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), nil)
 		return
 	}
 
@@ -513,7 +513,7 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead) {
 		// TODO: sequência de compra aprovada
 	case "pending":
 		// Reagenda em 20s
-		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(20*time.Second), nil)
+		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), nil)
 	case "expired", "cancelled":
 		_ = e.db.UpdatePaymentStatus(ctx, chargeID, status)
 		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": status, "charge_id": chargeID})
