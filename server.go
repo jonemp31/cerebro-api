@@ -9,9 +9,14 @@ import (
 )
 
 // Server — recebe os webhooks (da api-escala e, depois, do gateway) e enfileira.
-type Server struct{ debounce *Debouncer }
+type Server struct {
+	debounce *Debouncer
+	q        *Queue // eventos que não passam por debounce (chamadas, etc)
+}
 
-func NewServer(debounce *Debouncer) *Server { return &Server{debounce: debounce} }
+func NewServer(debounce *Debouncer, q *Queue) *Server {
+	return &Server{debounce: debounce, q: q}
+}
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -66,6 +71,25 @@ func (s *Server) handleWA(w http.ResponseWriter, r *http.Request) {
 				Name:      p.Data.NotifyName,
 			})
 		}
+	}
+
+	// Eventos de chamada — vão direto pra fila (sem debounce).
+	switch p.Data.Event {
+	case "whatsapp_call_accepted":
+		phone := p.Data.FromNumber
+		if phone == "" {
+			phone = digits(p.Data.From)
+		}
+		s.q.Enqueue(Job{CallEvent: &CallEventJob{
+			Phone:     phone,
+			SessionID: p.SessionID,
+			Event:     "accepted",
+		}})
+	case "call_accept_expired":
+		s.q.Enqueue(Job{CallEvent: &CallEventJob{
+			SessionID: p.SessionID,
+			Event:     "expired",
+		}})
 	}
 	w.WriteHeader(http.StatusOK)
 }

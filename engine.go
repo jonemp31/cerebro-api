@@ -152,6 +152,12 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	case stepCallArmed: // vídeo-chamada armada, lead mandou msg em vez de ligar
 		log.Printf("[engine] lead %d mandou msg com call armada (step=call_armed)", lead.ID)
 
+	case stepCallExpired: // lead não ligou — aguardando follow-up
+		log.Printf("[engine] lead %d em call_expired, aguardando follow-up copy", lead.ID)
+
+	case stepAwaitQ5: // respondeu ao "topa?" → próxima fase da copy
+		log.Printf("[engine] lead %d respondeu ao 'topa?' (step=await_q5, próxima copy pendente)", lead.ID)
+
 	case stepPixSent: // aguardando pagamento (próxima fase)
 		log.Printf("[engine] lead %d já no passo pix_sent (aguardando pagamento)", lead.ID)
 
@@ -364,4 +370,86 @@ func (e *Engine) armVideoCall(ctx context.Context, lead *Lead, videoURL string) 
 	}
 	log.Printf("[engine] vídeo-chamada armada para lead %d (phone=%s)", lead.ID, lead.Phone)
 	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "arm_video_call", "video": videoURL, "phone": lead.Phone})
+}
+
+// HandleCallEvent — processa eventos de chamada (aceita, expirada).
+func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
+	var lead *Lead
+	var err error
+
+	if ev.Phone != "" {
+		lead, err = e.db.GetLeadByPhone(ctx, ev.Phone, ev.SessionID)
+	} else {
+		// Expired: acha o lead que está esperando chamada nessa sessão
+		lead, err = e.db.GetLeadByStep(ctx, ev.SessionID, stepCallArmed)
+	}
+	if err != nil {
+		log.Printf("[engine] call event %s: get lead: %v", ev.Event, err)
+		return
+	}
+	if lead.Step != stepCallArmed {
+		log.Printf("[engine] call event %s para lead %d mas step=%s (ignorando)", ev.Event, lead.ID, lead.Step)
+		return
+	}
+
+	e.db.LogEvent(ctx, lead.ID, "call", map[string]any{"event": ev.Event, "phone": ev.Phone})
+
+	switch ev.Event {
+	case "accepted":
+		log.Printf("[engine] lead %d ligou — chamada aceita, continuando copy", lead.ID)
+		e.sendPostCallSequence(ctx, lead)
+	case "expired":
+		log.Printf("[engine] lead %d não ligou em 5 min — follow-up pendente", lead.ID)
+		// TODO: follow-up de "não ligou" (próxima copy)
+		e.goTo(ctx, lead, "in_flow", stepCallExpired)
+	}
+}
+
+// sendPostCallSequence — sequência pós-chamada de vídeo.
+func (e *Engine) sendPostCallSequence(ctx context.Context, lead *Lead) {
+	time.Sleep(20 * time.Second)
+	if e.send(ctx, lead, msgDoneCall) != nil {
+		return
+	}
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgLikedCall) != nil {
+		return
+	}
+	time.Sleep(8 * time.Second)
+	if e.send(ctx, lead, msgLikedU2) != nil {
+		return
+	}
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgThinking) != nil {
+		return
+	}
+	time.Sleep(20 * time.Second)
+	if e.send(ctx, lead, msgWhatAbout) != nil {
+		return
+	}
+	time.Sleep(8 * time.Second)
+	if e.send(ctx, lead, msgContinue) != nil {
+		return
+	}
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgThisCall) != nil {
+		return
+	}
+	time.Sleep(12 * time.Second)
+	if e.send(ctx, lead, msgLike) != nil {
+		return
+	}
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgBothHere) != nil {
+		return
+	}
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgJustUs) != nil {
+		return
+	}
+	time.Sleep(8 * time.Second)
+	if e.send(ctx, lead, msgWanna) != nil {
+		return
+	}
+	e.goTo(ctx, lead, "in_flow", stepAwaitQ5)
 }

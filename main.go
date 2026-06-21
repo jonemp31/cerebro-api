@@ -40,7 +40,7 @@ func main() {
 		envDur("DEBOUNCE_MAX", 12*time.Second))
 	sched := NewScheduler(db, q)        // dispara os timers (esperas/follow-ups)
 	sched.Start(ctx)
-	srv := NewServer(debounce)          // recebe os webhooks
+	srv := NewServer(debounce, q)        // recebe os webhooks
 
 	log.Printf("[cerebro] ouvindo em %s (api-escala=%s)", addr, apiURL)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

@@ -149,3 +149,29 @@ func (d *DB) GetLead(ctx context.Context, id int64) (*Lead, error) {
 	}
 	return &l, nil
 }
+
+// GetLeadByPhone — busca lead por telefone + sessão (sem upsert).
+func (d *DB) GetLeadByPhone(ctx context.Context, phone, sessionID string) (*Lead, error) {
+	var l Lead
+	err := d.pool.QueryRow(ctx,
+		`SELECT id, phone, session_id, status, COALESCE(flow,''), COALESCE(step,'')
+		 FROM leads WHERE phone=$1 AND session_id=$2`, phone, sessionID).
+		Scan(&l.ID, &l.Phone, &l.SessionID, &l.Status, &l.Flow, &l.Step)
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+// GetLeadByStep — busca lead por sessão + passo (ex: achar quem está em call_armed).
+func (d *DB) GetLeadByStep(ctx context.Context, sessionID, step string) (*Lead, error) {
+	var l Lead
+	err := d.pool.QueryRow(ctx,
+		`SELECT id, phone, session_id, status, COALESCE(flow,''), COALESCE(step,'')
+		 FROM leads WHERE session_id=$1 AND step=$2 LIMIT 1`, sessionID, step).
+		Scan(&l.ID, &l.Phone, &l.SessionID, &l.Status, &l.Flow, &l.Step)
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
+}

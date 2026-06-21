@@ -5,10 +5,18 @@ import (
 	"log"
 )
 
-// Job — uma unidade de trabalho (mensagem recebida ou timer).
+// CallEventJob — evento de chamada (aceita, expirada, etc).
+type CallEventJob struct {
+	Phone     string // vazio para "expired" (resolve via DB)
+	SessionID string
+	Event     string // "accepted" ou "expired"
+}
+
+// Job — uma unidade de trabalho (mensagem recebida, timer ou evento de chamada).
 type Job struct {
-	Inbound *InboundJob
-	Timer   *Action
+	Inbound   *InboundJob
+	Timer     *Action
+	CallEvent *CallEventJob
 }
 
 // Queue — processamento POR LEAD (Opção C). Cada job roda numa goroutine que
@@ -44,6 +52,11 @@ func jobKey(job Job) string {
 		return job.Inbound.Phone
 	case job.Timer != nil:
 		return job.Timer.Phone
+	case job.CallEvent != nil:
+		if job.CallEvent.Phone != "" {
+			return job.CallEvent.Phone
+		}
+		return "session:" + job.CallEvent.SessionID
 	}
 	return ""
 }
@@ -65,5 +78,7 @@ func (q *Queue) process(job Job) {
 		q.eng.HandleInbound(ctx, job.Inbound)
 	case job.Timer != nil:
 		q.eng.HandleTimer(ctx, job.Timer)
+	case job.CallEvent != nil:
+		q.eng.HandleCallEvent(ctx, job.CallEvent)
 	}
 }

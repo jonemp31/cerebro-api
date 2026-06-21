@@ -58,6 +58,17 @@ const (
 	msgShowU     = "qro te mostrar uma coisa rs"
 	msgCallNow   = "liga agora vai"
 	msgWaiting   = "to aqui te esperando ❤️🔥"
+	msgDoneCall  = "pronto gatinho"
+	msgLikedCall = "gostou rs?"
+	msgLikedU2   = "gostei de vc, sabia? rs ❤️"
+	msgThinking  = "sabe oq eu tava pensando?"
+	msgWhatAbout = "oq vc acha da gente"
+	msgContinue  = "continuar"
+	msgThisCall  = "essa chamada de vídeo?"
+	msgLike      = "tipo"
+	msgBothHere  = "vc ta aí, eu to aqui"
+	msgJustUs    = "só nos dois sozinhos rs"
+	msgWanna     = "topa?"
 	msgPixIntro  = "Aqui meu pix"
 )
 
@@ -93,8 +104,10 @@ const (
 	stepAwaitQ2Fu1 = "await_q2_fu1"  // follow-up "?" enviado (dorme)
 	stepAwaitQ3    = "await_q3"      // mandou "vou te dar um presente", aguarda resposta
 	stepAwaitQ4    = "await_q4"      // mandou "só pq gostei de vc", aguarda resposta (timer 3min)
-	stepCallArmed  = "call_armed"    // vídeo-chamada armada, aguardando lead ligar
-	stepPixSent    = "pix_sent"      // mandou o Pix, aguardando pagamento
+	stepCallArmed   = "call_armed"    // vídeo-chamada armada, aguardando lead ligar
+	stepCallExpired = "call_expired"  // lead não ligou em 5 min, aguarda follow-up
+	stepAwaitQ5     = "await_q5"      // mandou "topa?", aguarda resposta
+	stepPixSent     = "pix_sent"      // mandou o Pix, aguardando pagamento
 )
 
 // ── Follow-ups do await_q1 ──────────────────────────────────────────────────
