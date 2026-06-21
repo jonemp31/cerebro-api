@@ -71,8 +71,13 @@ const (
 	msgWanna     = "topa?"
 	msgHelpToo   = "se vc aceitar e puder me ajudar tbm rs"
 	msgAskPix    = "me ajuda com 20 reais no pix amor? 🥹🙏"
-	msgCanSendPix = "posso te mandar meu pix?"
-	msgPixIntro  = "Aqui meu pix"
+	msgCanSendPix  = "posso te mandar meu pix?"
+	msgSendPix     = "manda o pix e eu já te ligo agora"
+	msgCopyKey     = "só copiar a chave amor 👇"
+	msgSendReceipt = "e me mandar o comprovante aqui"
+	msgDealAmor    = "combinado amor?"
+	msgWaitHeart   = "to te esperando aqui 🙈❤️"
+	msgPixIntro    = "Aqui meu pix"
 )
 
 // Áudios do funil.
@@ -81,6 +86,7 @@ const (
 	audioYas2     = "https://s3.crushzap.com/painel/copy1/yas2.mp3"
 	audioYas3     = "https://s3.crushzap.com/painel/copy1/yas3.mp3"
 	audioYas4     = "https://s3.crushzap.com/painel/copy1/yas4.mp3"
+	audioYas5     = "https://s3.crushzap.com/painel/copy1/yas5.mp3"
 )
 
 // Imagens do funil.
@@ -98,7 +104,7 @@ const (
 const (
 	pixKeyType = "EVP" // EVP = chave aleatória
 	pixName    = "🔒 PIX COPIA E COLA"
-	pixKey     = "00020126360014BR.GOV.BCB.PIX011440066967000190520400005303986540530.005802BR5901N6001C62110507produto6304426F"
+	pixKey     = "00020126360014BR.GOV.BCB.PIX011440066967000190520400005303986540530.005802BR5901N6001C62100506Yasmin63048B98"
 )
 
 // Passos (steps) do funil.

@@ -183,9 +183,12 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 			return
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ6)
+		// Agenda timer de 4 min (se não responder, continua mesmo assim)
+		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(4*time.Minute), nil)
 
-	case stepAwaitQ6: // respondeu → próxima fase da copy
-		log.Printf("[engine] lead %d respondeu ao 'posso te mandar meu pix?' (step=await_q6, próxima copy pendente)", lead.ID)
+	case stepAwaitQ6: // respondeu ao "posso te mandar meu pix?" → 29s → pix sequence
+		time.Sleep(29 * time.Second)
+		e.sendPixSequence(ctx, lead)
 
 	case stepPixSent: // aguardando pagamento (próxima fase)
 		log.Printf("[engine] lead %d já no passo pix_sent (aguardando pagamento)", lead.ID)
@@ -241,6 +244,10 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 	case stepAwaitQ4:
 		// Timeout 3 min — lead não respondeu, continua a copy mesmo assim
 		e.sendCallSequence(ctx, lead)
+
+	case stepAwaitQ6:
+		// Timeout 4 min — lead não respondeu, continua mesmo assim (sem delay extra)
+		e.sendPixSequence(ctx, lead)
 	}
 }
 
@@ -399,6 +406,39 @@ func (e *Engine) armVideoCall(ctx context.Context, lead *Lead, videoURL string) 
 	}
 	log.Printf("[engine] vídeo-chamada armada para lead %d (phone=%s)", lead.ID, lead.Phone)
 	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "arm_video_call", "video": videoURL, "phone": lead.Phone})
+}
+
+// sendPixSequence — áudio final + pedido de pix + envio da chave.
+// Usada tanto quando o lead responde (29s delay) quanto no timeout (direto).
+func (e *Engine) sendPixSequence(ctx context.Context, lead *Lead) {
+	if e.sendAudioURL(ctx, lead, audioYas5) != nil {
+		return
+	}
+	time.Sleep(58 * time.Second)
+	if e.send(ctx, lead, msgSendPix) != nil {
+		return
+	}
+	time.Sleep(12 * time.Second)
+	if e.send(ctx, lead, msgCopyKey) != nil {
+		return
+	}
+	time.Sleep(3 * time.Second)
+	if e.sendPix(ctx, lead) != nil {
+		return
+	}
+	time.Sleep(8 * time.Second)
+	if e.send(ctx, lead, msgSendReceipt) != nil {
+		return
+	}
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgDealAmor) != nil {
+		return
+	}
+	time.Sleep(11 * time.Second)
+	if e.send(ctx, lead, msgWaitHeart) != nil {
+		return
+	}
+	e.goTo(ctx, lead, "awaiting_payment", stepPixSent)
 }
 
 // HandleCallEvent — processa eventos de chamada (aceita, expirada).
