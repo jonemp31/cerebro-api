@@ -1,12 +1,47 @@
 package main
 
+import "math/rand"
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Copy do funil — Fase 1 (fixa no código). Edite os textos aqui.
 // No futuro isto vira o "construtor de fluxos" (data-driven no banco).
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Saudações — escolha aleatória a cada lead novo.
+var greetings = []string{
+	"Oi, tudo bem?",
+	"Oi amor, tudo bem?",
+	"Oi vida, tudo bem?",
+	"Oi anjo, tudo bem?",
+	"Oi gatinho, tudo bem?",
+	"Oie, tudo bem?",
+	"Oii, tudo bem?",
+	"Oiii, tudo bem?",
+	"ooi tudo bem?",
+	"oi tudo bem?",
+	"oiee tudo bem?",
+	"oi bb, tudo bem?",
+	"Oi bb, tudo bem?",
+	"oi vida, tudo bem?",
+	"oi anjo, tudo bem?",
+	"oi gatinho, tudo bem?",
+	"oi lindo, tudo bem?",
+	"Oi nego, tudo bem?",
+	"Oie amor, tudo bem?",
+	"Oi meu bem, tudo bem?",
+	"Oii vida, tudo bem?",
+	"Oi neném, tudo bem?",
+	"Oie anjo, tudo bem?",
+	"Oi mozão, tudo bem?",
+	"Oii gato, tudo bem?",
+	"Oiee bb, tudo bem?",
+}
+
+func randomGreeting() string {
+	return greetings[rand.Intn(len(greetings))]
+}
+
 const (
-	msgGreeting = "Oi, tudo bem?"
 	msgQuestion = "O que faz de bom por aí?"
 	msgPixIntro = "Aqui meu pix"
 )

@@ -58,7 +58,7 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 
 	case stepNew: // primeiro contato → cumprimenta
 		e.replyDelay()
-		if e.send(ctx, lead, msgGreeting) != nil {
+		if e.send(ctx, lead, randomGreeting()) != nil {
 			return
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
