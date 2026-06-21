@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -87,6 +88,9 @@ func (c *PaymentClient) CreateCharge(ctx context.Context, phone string, amount f
 		}
 		tx = obj.Transaction
 	}
+	// Remove espaços do pix_copia_cola e ID (gateway pode retornar com trailing space)
+	tx.PixCopiaCola = strings.TrimSpace(tx.PixCopiaCola)
+	tx.ID = strings.TrimSpace(tx.ID)
 	return &tx, nil
 }
 
