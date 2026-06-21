@@ -9,9 +9,9 @@ import (
 )
 
 // Server — recebe os webhooks (da api-escala e, depois, do gateway) e enfileira.
-type Server struct{ q *Queue }
+type Server struct{ debounce *Debouncer }
 
-func NewServer(q *Queue) *Server { return &Server{q: q} }
+func NewServer(debounce *Debouncer) *Server { return &Server{debounce: debounce} }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -58,13 +58,13 @@ func (s *Server) handleWA(w http.ResponseWriter, r *http.Request) {
 			phone = digits(p.Data.From)
 		}
 		if phone != "" {
-			s.q.Enqueue(Job{Inbound: &InboundJob{
+			s.debounce.Add(InboundJob{
 				Phone:     phone,
 				SessionID: p.SessionID,
 				Body:      p.Data.Body,
 				WAMsgID:   p.Data.MessageID,
 				Name:      p.Data.NotifyName,
-			}})
+			})
 		}
 	}
 	w.WriteHeader(http.StatusOK)

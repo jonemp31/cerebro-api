@@ -35,9 +35,12 @@ func main() {
 	gate := NewSendGate(envDur("SEND_GATE_THRESHOLD", 60*time.Second))
 	eng := NewEngine(db, api, gate)     // a máquina de estados (o cérebro)
 	q := NewQueue(eng)                  // fila por-lead (concorrente entre leads, serial por lead)
+	debounce := NewDebouncer(q,          // agrupa msgs rápidas do mesmo lead (8-12s)
+		envDur("DEBOUNCE_MIN", 8*time.Second),
+		envDur("DEBOUNCE_MAX", 12*time.Second))
 	sched := NewScheduler(db, q)        // dispara os timers (esperas/follow-ups)
 	sched.Start(ctx)
-	srv := NewServer(q)                 // recebe os webhooks
+	srv := NewServer(debounce)          // recebe os webhooks
 
 	log.Printf("[cerebro] ouvindo em %s (api-escala=%s)", addr, apiURL)
 	if err := http.ListenAndServe(addr, srv.Routes()); err != nil {

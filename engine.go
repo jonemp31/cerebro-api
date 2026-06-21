@@ -17,16 +17,17 @@ func NewEngine(db *DB, api *APIClient, gate *SendGate) *Engine {
 	return &Engine{db: db, api: api, gate: gate}
 }
 
-// InboundJob — uma mensagem recebida de um lead.
+// InboundJob — uma mensagem (ou lote debounced) recebida de um lead.
 type InboundJob struct {
 	Phone     string
 	SessionID string
-	Body      string
-	WAMsgID   string
+	Body      string     // texto combinado (se batch, msgs unidas com \n)
+	WAMsgID   string     // ID da primeira mensagem (dedup)
 	Name      string
+	BatchMsgs []BatchMsg // mensagens individuais (preenchido pelo Debouncer; nil = msg única)
 }
 
-// HandleInbound — processa UMA mensagem do lead (serial por lead, via KeyedMutex).
+// HandleInbound — processa UMA interação do lead (pode conter várias msgs debounced).
 func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 	lead, err := e.db.UpsertLead(ctx, j.Phone, j.SessionID, j.Name)
 	if err != nil {
@@ -37,7 +38,15 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 	if seen, _ := e.db.MessageSeen(ctx, j.WAMsgID); seen {
 		return
 	}
-	_ = e.db.InsertMessage(ctx, lead.ID, "inbound", j.Body, "text", j.WAMsgID, j.SessionID)
+
+	// Grava mensagens: individuais se debounced, única se não
+	if len(j.BatchMsgs) > 1 {
+		for _, m := range j.BatchMsgs {
+			_ = e.db.InsertMessage(ctx, lead.ID, "inbound", m.Body, "text", m.WAMsgID, j.SessionID)
+		}
+	} else {
+		_ = e.db.InsertMessage(ctx, lead.ID, "inbound", j.Body, "text", j.WAMsgID, j.SessionID)
+	}
 	e.db.LogEvent(ctx, lead.ID, "inbound", map[string]any{"body": j.Body, "step": lead.Step})
 
 	e.advance(ctx, lead)
