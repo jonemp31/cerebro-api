@@ -214,6 +214,12 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	case stepUpsellPixSent: // aguardando upsell PIX
 		log.Printf("[engine] lead %d mandou msg enquanto aguarda upsell pix", lead.ID)
 
+	case stepUpsellPixSentFu: // upsell PIX follow-up enviado
+		log.Printf("[engine] lead %d mandou msg enquanto aguarda upsell pix (pós follow-up)", lead.ID)
+
+	case stepUpsellDeliveryArmed: // chamada entrega2 armada
+		log.Printf("[engine] lead %d mandou msg com upsell delivery armada", lead.ID)
+
 	case stepDone: // funil completo
 		log.Printf("[engine] lead %d em done (funil completo)", lead.ID)
 
@@ -273,7 +279,7 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 		// Timeout 4 min — lead não respondeu, continua mesmo assim (sem delay extra)
 		e.sendPixSequence(ctx, lead)
 
-	case stepPixSent, stepPixSent2, stepPixSent2Fu, stepUpsellPixSent:
+	case stepPixSent, stepPixSent2, stepPixSent2Fu, stepUpsellPixSent, stepUpsellPixSentFu:
 		// Polling de pagamento
 		if a.Kind == "payment_check" {
 			e.checkPayment(ctx, lead, a)
@@ -544,8 +550,11 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 		_ = e.db.UpdatePaymentStatus(ctx, chargeID, "paid")
 		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "charge_id": chargeID})
 		log.Printf("[engine] \xf0\x9f\x92\xb0 lead %d PAGOU! charge=%s", lead.ID, chargeID)
-		e.sendPaidSequence(ctx, lead)
-		// TODO: sequ\xc3\xaancia de compra aprovada
+		if lead.Step == stepUpsellPixSent {
+			e.sendUpsellPaidSequence(ctx, lead)
+		} else {
+			e.sendPaidSequence(ctx, lead)
+		}
 
 	case "pending":
 		nextCount := checkCount + 1
@@ -553,6 +562,12 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 		// 2\xc2\xb0 PIX: ap\xc3\xb3s 20 checks (~10 min), envia follow-up (uma vez)
 		if lead.Step == stepPixSent2 && nextCount >= 20 {
 			e.sendPixRetryFollowUp(ctx, lead)
+		}
+
+		// Upsell PIX: follow-up "sumiu?" após 20 checks (~10 min)
+		if lead.Step == stepUpsellPixSent && nextCount >= 20 {
+			e.send(ctx, lead, msgUpFu)
+			e.goTo(ctx, lead, "awaiting_payment", stepUpsellPixSentFu)
 		}
 
 		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(nextCount)})
@@ -773,6 +788,23 @@ func (e *Engine) sendDeliveryGiveUp(ctx context.Context, lead *Lead) {
 	e.goTo(ctx, lead, "paid", stepDeliveryGiveUp)
 }
 
+// sendUpsellPaidSequence — upsell PIX pago → agradece + arma entrega2.
+func (e *Engine) sendUpsellPaidSequence(ctx context.Context, lead *Lead) {
+	e.goTo(ctx, lead, "paid", "upsell_paid")
+	if e.send(ctx, lead, msgUpPd1) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgUpPd2) != nil { return }
+	// Arma chamada de entrega 2
+	e.armVideoCall(ctx, lead, videoEntrega2)
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgUpPd3) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgUpPd4) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgUpPd5) != nil { return }
+	e.goTo(ctx, lead, "paid", stepUpsellDeliveryArmed)
+}
+
 
 // HandleCallEvent — processa eventos de chamada (aceita, expirada).
 func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
@@ -783,6 +815,7 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 	allArmedSteps := []string{
 		stepCallArmed, stepCallArmed2, stepCallArmed3, stepCallArmed4,
 		stepDeliveryCallArmed, stepDeliveryCallArmed2,
+		stepUpsellDeliveryArmed,
 	}
 
 	if ev.Phone != "" {
@@ -814,6 +847,10 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 			// Chamada de entrega — espera vídeo terminar, depois upsell
 			log.Printf("[engine] lead %d ligou pra entrega (step=%s) — upsell", lead.ID, lead.Step)
 			e.sendPostDeliverySequence(ctx, lead)
+		case lead.Step == stepUpsellDeliveryArmed:
+			// Chamada de entrega 2 (upsell) — funil completo
+			log.Printf("[engine] lead %d ligou pra entrega2 (upsell) — done", lead.ID)
+			e.goTo(ctx, lead, "paid", stepDone)
 		}
 	case "expired":
 		switch lead.Step {
@@ -837,6 +874,10 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 		case stepDeliveryCallArmed2:
 			log.Printf("[engine] lead %d não ligou pra entrega (tentativa 2) — desistindo", lead.ID)
 			e.sendDeliveryGiveUp(ctx, lead)
+		// ── Chamada upsell delivery ──
+		case stepUpsellDeliveryArmed:
+			log.Printf("[engine] lead %d não ligou pra entrega2 (upsell) — done", lead.ID)
+			e.goTo(ctx, lead, "paid", stepDone)
 		}
 	}
 }

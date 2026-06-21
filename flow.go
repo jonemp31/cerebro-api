@@ -104,6 +104,7 @@ const (
 const (
 	videoCall1    = "https://s3.crushzap.com/painel/copy1/videoligacao1.mp4"
 	videoEntrega1 = "https://s3.crushzap.com/painel/copy1/entrega1.mp4"
+	videoEntrega2 = "https://s3.crushzap.com/painel/copy1/entrega2.mp4"
 )
 
 // Imagens do funil (upsell).
@@ -144,6 +145,8 @@ const (
 	stepDeliveryCallArmed2 = "delivery_call_2"  // tentativa 2
 	stepDeliveryGiveUp     = "delivery_give_up" // não ligou pra entrega
 	stepUpsellPixSent      = "upsell_pix_sent"  // upsell PIX enviado, polling
+	stepUpsellPixSentFu    = "upsell_pix_fu"    // follow-up 10min do upsell PIX
+	stepUpsellDeliveryArmed = "upsell_delivery"  // chamada entrega2 armada
 	stepDone               = "done"             // funil completo
 )
 
@@ -304,4 +307,15 @@ const (
 	msgUp10 = "me ajuda pfv e eu te recompenso dps"
 	msgUp11 = "te mandar meu pix"
 	msgUp12 = "só fazer e aí a gente continua a chamada"
+)
+
+// ── Upsell PIX pago ─────────────────────────────────────────────────────────
+
+const (
+	msgUpPd1  = "caiu aqui o pix amor"
+	msgUpPd2  = "mto obrigada viu?"
+	msgUpPd3  = "já pode me ligar"
+	msgUpPd4  = "me liga pra gente continuar"
+	msgUpPd5  = "vamos? ❤️"
+	msgUpFu   = "sumiu? 😔"
 )
