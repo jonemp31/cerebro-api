@@ -45,7 +45,9 @@ const (
 	msgShowYou  = "te mostrar uma coisa"
 	msgThatsMe  = "essa sou eu rs"
 	msgLikedIt  = "gostou?"
-	msgQuestion = "O que faz de bom por aí?"
+	msgAlone    = "vc tá sozinho aí agora? 🙈"
+	msgAloneFu  = "?"
+	msgGift     = "vou te dar um presente agora, tá? ❤️"
 	msgPixIntro = "Aqui meu pix"
 )
 
@@ -71,9 +73,11 @@ const (
 	stepNew        = ""              // lead novo / primeiro contato
 	stepAwaitQ1    = "await_q1"      // mandou "gostou?", aguarda resposta
 	stepAwaitQ1Fu1 = "await_q1_fu1"  // 1° follow-up enviado, aguarda resposta
-	stepAwaitQ1Fu2 = "await_q1_fu2"  // 2° follow-up enviado, aguarda resposta (ou dorme)
-	stepAwaitQ2    = "await_q2"      // mandou "O que faz de bom?", aguarda resposta
-	stepPixSent    = "pix_sent"      // mandou o Pix, aguardando pagamento (próxima fase)
+	stepAwaitQ1Fu2 = "await_q1_fu2"  // 2° follow-up enviado (ou dorme)
+	stepAwaitQ2    = "await_q2"      // mandou "vc tá sozinho?", aguarda resposta
+	stepAwaitQ2Fu1 = "await_q2_fu1"  // follow-up "?" enviado (dorme)
+	stepAwaitQ3    = "await_q3"      // mandou "vou te dar um presente", aguarda resposta
+	stepPixSent    = "pix_sent"      // mandou o Pix, aguardando pagamento
 )
 
 // ── Follow-ups do await_q1 ──────────────────────────────────────────────────

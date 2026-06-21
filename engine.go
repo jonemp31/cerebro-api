@@ -63,6 +63,13 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 		// Voltou depois do 1° follow-up → continua normalmente
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
 		e.advance(ctx, lead)
+	case stepAwaitQ2Fu1:
+		// Respondeu ao "?" → delay longo (99s) antes do presente
+		time.Sleep(99 * time.Second)
+		if e.send(ctx, lead, msgGift) != nil {
+			return
+		}
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ3)
 	default:
 		e.advance(ctx, lead)
 	}
@@ -101,22 +108,24 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 		// Agenda follow-up em 5 min (se o lead não responder)
 		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(5*time.Minute), nil)
 
-	case stepAwaitQ1: // respondeu → faz a pergunta
-		e.replyDelay()
-		if e.send(ctx, lead, msgQuestion) != nil {
+	case stepAwaitQ1: // respondeu ao "gostou?" → 31s → "vc tá sozinho?"
+		time.Sleep(31 * time.Second)
+		if e.send(ctx, lead, msgAlone) != nil {
 			return
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ2)
+		// Agenda follow-up "?" em 5 min
+		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(5*time.Minute), nil)
 
-	case stepAwaitQ2: // respondeu → manda o Pix
-		e.replyDelay()
-		if e.send(ctx, lead, msgPixIntro) != nil {
+	case stepAwaitQ2: // respondeu ao "vc tá sozinho?" → 28s → presente
+		time.Sleep(28 * time.Second)
+		if e.send(ctx, lead, msgGift) != nil {
 			return
 		}
-		if e.sendPix(ctx, lead) != nil {
-			return
-		}
-		e.goTo(ctx, lead, "awaiting_payment", stepPixSent)
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ3)
+
+	case stepAwaitQ3: // respondeu ao presente → próxima fase da copy
+		log.Printf("[engine] lead %d respondeu ao presente (step=await_q3, próxima copy pendente)", lead.ID)
 
 	case stepPixSent: // aguardando pagamento (próxima fase)
 		log.Printf("[engine] lead %d já no passo pix_sent (aguardando pagamento)", lead.ID)
@@ -159,7 +168,15 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 			return
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ1Fu2)
-		// Não agenda mais nada — fica dormindo até o lead voltar
+		// Não agenda mais nada — fica dormindo
+
+	case stepAwaitQ2:
+		// Follow-up "?" — lead não respondeu "vc tá sozinho?" em 5 min
+		if e.send(ctx, lead, msgAloneFu) != nil {
+			return
+		}
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ2Fu1)
+		// Não agenda mais nada — dorme até o lead voltar
 	}
 }
 
