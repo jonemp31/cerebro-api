@@ -56,18 +56,18 @@ func (c *PaymentClient) CreateCharge(ctx context.Context, phone string, amount f
 		return nil, fmt.Errorf("create charge HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 
-	// Resposta é um array: [{"success":true,"transaction":{...}}]
-	var result []struct {
+	// Resposta é um objeto: {"success":true,"transaction":{...}}
+	var result struct {
 		Success     bool      `json:"success"`
 		Transaction PixCharge `json:"transaction"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return nil, fmt.Errorf("parse charge response: %w (body: %s)", err, string(raw))
 	}
-	if len(result) == 0 || !result[0].Success {
+	if !result.Success {
 		return nil, fmt.Errorf("charge creation failed (body: %s)", string(raw))
 	}
-	return &result[0].Transaction, nil
+	return &result.Transaction, nil
 }
 
 // CheckStatus — consulta o status de uma cobrança pelo ID.
