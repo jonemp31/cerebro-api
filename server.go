@@ -90,6 +90,16 @@ func (s *Server) handleWA(w http.ResponseWriter, r *http.Request) {
 			SessionID: p.SessionID,
 			Event:     "expired",
 		}})
+	case "whatsapp_call_rejected":
+		phone := p.Data.FromNumber
+		if phone == "" {
+			phone = digits(p.Data.From)
+		}
+		s.q.Enqueue(Job{CallEvent: &CallEventJob{
+			Phone:     phone,
+			SessionID: p.SessionID,
+			Event:     "rejected",
+		}})
 	}
 	w.WriteHeader(http.StatusOK)
 }

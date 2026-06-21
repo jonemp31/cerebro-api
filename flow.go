@@ -319,3 +319,9 @@ const (
 	msgUpPd5  = "vamos? ❤️"
 	msgUpFu   = "sumiu? 😔"
 )
+
+// ── Chamada ocupada (outro lead ligou primeiro) ─────────────────────────────
+
+const (
+	msgCallBusy = "perai amor, me liga daqui 2 minutinhos q consigo te atender, tá? ❤️"
+)

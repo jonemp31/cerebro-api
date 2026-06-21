@@ -11,14 +11,22 @@ import (
 
 // Engine — o cérebro. Recebe eventos (mensagem do lead, timer) e decide a ação.
 type Engine struct {
-	db   *DB
-	api  *APIClient
-	gate *SendGate
-	pay  *PaymentClient
+	db    *DB
+	api   *APIClient
+	gate  *SendGate
+	pay   *PaymentClient
+	calls *CallTracker
 }
 
-func NewEngine(db *DB, api *APIClient, gate *SendGate, pay *PaymentClient) *Engine {
-	return &Engine{db: db, api: api, gate: gate, pay: pay}
+func NewEngine(db *DB, api *APIClient, gate *SendGate, pay *PaymentClient, calls *CallTracker) *Engine {
+	return &Engine{db: db, api: api, gate: gate, pay: pay, calls: calls}
+}
+
+// isArmedStep — retorna true se o step é de chamada armada (aguardando lead ligar).
+func isArmedStep(step string) bool {
+	return strings.HasPrefix(step, "call_armed") ||
+		strings.HasPrefix(step, "delivery_call") ||
+		step == stepUpsellDeliveryArmed
 }
 
 // InboundJob — uma mensagem (ou lote debounced) recebida de um lead.
@@ -53,8 +61,11 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 	}
 	e.db.LogEvent(ctx, lead.ID, "inbound", map[string]any{"body": j.Body, "step": lead.Step})
 
-	// Cancela timers pendentes (o lead respondeu)
-	_ = e.db.CancelActions(ctx, lead.ID)
+	// Cancela timers pendentes (o lead respondeu) — exceto para steps com chamada
+	// armada, onde o re-arm_call precisa sobreviver.
+	if !isArmedStep(lead.Step) {
+		_ = e.db.CancelActions(ctx, lead.ID)
+	}
 
 	// Se o lead estava em follow-up, trata o retorno
 	switch lead.Step {
@@ -284,6 +295,17 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 		if a.Kind == "payment_check" {
 			e.checkPayment(ctx, lead, a)
 		}
+
+	default:
+		// Re-arm de chamada para steps armados (dispara após chamada de outro lead)
+		if a.Kind == "rearm_call" && isArmedStep(lead.Step) {
+			if v, ok := a.Payload["video"].(string); ok {
+				log.Printf("[engine] re-arm chamada para lead %d (step=%s)", lead.ID, lead.Step)
+				e.armVideoCall(ctx, lead, v)
+			}
+		} else {
+			log.Printf("[engine] timer %q não tratado para step %q (lead %d)", a.Kind, lead.Step, lead.ID)
+		}
 	}
 }
 
@@ -439,13 +461,26 @@ func (e *Engine) sendCallSequence(ctx context.Context, lead *Lead) {
 }
 
 // armVideoCall — arma o auto-accept de chamada de vídeo na api-escala.
+// Registra no CallTracker e mergeia allowed_numbers com outros leads armados
+// que usam o mesmo vídeo na mesma sessão.
 func (e *Engine) armVideoCall(ctx context.Context, lead *Lead, videoURL string) {
-	if err := e.api.AcceptVideo(ctx, lead.SessionID, videoURL, lead.Phone); err != nil {
+	// Registra no tracker
+	e.calls.Add(lead.SessionID, ArmedLead{
+		Phone: lead.Phone, LeadID: lead.ID, VideoURL: videoURL,
+	})
+
+	// Merge: todos os phones armados com o mesmo vídeo nessa sessão
+	phones := e.calls.PhonesWithSameVideo(lead.SessionID, videoURL)
+	allowedNumbers := strings.Join(phones, ",")
+
+	if err := e.api.AcceptVideo(ctx, lead.SessionID, videoURL, allowedNumbers); err != nil {
 		log.Printf("[engine] arm video call lead %d: %v", lead.ID, err)
 		return
 	}
-	log.Printf("[engine] vídeo-chamada armada para lead %d (phone=%s)", lead.ID, lead.Phone)
-	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "arm_video_call", "video": videoURL, "phone": lead.Phone})
+	log.Printf("[engine] vídeo-chamada armada para lead %d (allowed=%s)", lead.ID, allowedNumbers)
+	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{
+		"type": "arm_video_call", "video": videoURL, "allowed": allowedNumbers,
+	})
 }
 
 // sendPixSequence — áudio final + pedido de pix + envio da chave.
@@ -810,7 +845,7 @@ func (e *Engine) sendUpsellPaidSequence(ctx context.Context, lead *Lead) {
 }
 
 
-// HandleCallEvent — processa eventos de chamada (aceita, expirada).
+// HandleCallEvent — processa eventos de chamada (aceita, expirada, rejeitada).
 func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 	var lead *Lead
 	var err error
@@ -842,23 +877,30 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 
 	switch ev.Event {
 	case "accepted":
+		// Remove o lead aceito do tracker e notifica os outros
+		e.calls.Remove(ev.SessionID, lead.Phone)
+		others := e.calls.GetAll(ev.SessionID)
+		if len(others) > 0 {
+			e.notifyAndRearmOthers(ctx, ev.SessionID, others)
+		}
+
 		switch {
 		case strings.HasPrefix(lead.Step, "call_armed"):
-			// Chamada original — continua copy principal
 			log.Printf("[engine] lead %d ligou (step=%s) — continuando copy", lead.ID, lead.Step)
 			e.sendPostCallSequence(ctx, lead)
 		case strings.HasPrefix(lead.Step, "delivery_call"):
-			// Chamada de entrega — espera vídeo terminar, depois upsell
 			log.Printf("[engine] lead %d ligou pra entrega (step=%s) — upsell", lead.ID, lead.Step)
 			e.sendPostDeliverySequence(ctx, lead)
 		case lead.Step == stepUpsellDeliveryArmed:
-			// Chamada de entrega 2 (upsell) — funil completo
 			log.Printf("[engine] lead %d ligou pra entrega2 (upsell) — done", lead.ID)
 			e.goTo(ctx, lead, "paid", stepDone)
 		}
+
 	case "expired":
+		// Remove do tracker
+		e.calls.Remove(ev.SessionID, lead.Phone)
+
 		switch lead.Step {
-		// ── Chamada original ──
 		case stepCallArmed:
 			log.Printf("[engine] lead %d não ligou (tentativa 1) — follow-up 1", lead.ID)
 			e.sendCallFollowUp1(ctx, lead)
@@ -871,18 +913,50 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 		case stepCallArmed4:
 			log.Printf("[engine] lead %d não ligou (tentativa 4) — desistindo", lead.ID)
 			e.goTo(ctx, lead, "lost", stepCallGiveUp)
-		// ── Chamada de entrega ──
 		case stepDeliveryCallArmed:
 			log.Printf("[engine] lead %d não ligou pra entrega (tentativa 1)", lead.ID)
 			e.sendDeliveryCallFollowUp1(ctx, lead)
 		case stepDeliveryCallArmed2:
 			log.Printf("[engine] lead %d não ligou pra entrega (tentativa 2) — desistindo", lead.ID)
 			e.sendDeliveryGiveUp(ctx, lead)
-		// ── Chamada upsell delivery ──
 		case stepUpsellDeliveryArmed:
 			log.Printf("[engine] lead %d não ligou pra entrega2 (upsell) — done", lead.ID)
 			e.goTo(ctx, lead, "paid", stepDone)
 		}
+
+	case "rejected":
+		// Chamada rejeitada (número não estava no allowlist por race condition)
+		if isArmedStep(lead.Step) {
+			log.Printf("[engine] lead %d chamada rejeitada (step=%s) — perai + re-arm", lead.ID, lead.Step)
+			e.send(ctx, lead, msgCallBusy)
+			// Re-arma em 2 min (busca vídeo do tracker)
+			armed := e.calls.GetAll(ev.SessionID)
+			for _, al := range armed {
+				if al.Phone == lead.Phone {
+					_ = e.db.ScheduleAction(ctx, lead.ID, "rearm_call", time.Now().Add(2*time.Minute),
+						map[string]any{"video": al.VideoURL})
+					break
+				}
+			}
+		}
+	}
+}
+
+// notifyAndRearmOthers — quando um lead é aceito, avisa os outros armados na mesma
+// sessão ("perai") e agenda re-arm em 2 min (após a chamada ativa terminar).
+func (e *Engine) notifyAndRearmOthers(ctx context.Context, sessionID string, others []ArmedLead) {
+	for _, al := range others {
+		go func(al ArmedLead) {
+			otherLead, err := e.db.GetLead(ctx, al.LeadID)
+			if err != nil {
+				log.Printf("[engine] notify other lead %d: %v", al.LeadID, err)
+				return
+			}
+			log.Printf("[engine] notificando lead %d (sessão ocupada) — re-arm em 2 min", al.LeadID)
+			e.send(ctx, otherLead, msgCallBusy)
+			_ = e.db.ScheduleAction(ctx, al.LeadID, "rearm_call", time.Now().Add(2*time.Minute),
+				map[string]any{"video": al.VideoURL})
+		}(al)
 	}
 }
 
