@@ -33,7 +33,7 @@ func main() {
 	// Peças
 	api := NewAPIClient(apiURL)         // fala com a api-escala (/send/*)
 	pay := NewPaymentClient(             // consulta de pagamento
-		env("PIX_CHECK_URL", "https://webhook.crushzap.com/webhook/consulta-pix"))
+		env("PIX_CHECK_URL", "https://webhook.crushzap.com/webhook/contasimples"))
 	gate := NewSendGate(envDur("SEND_GATE_THRESHOLD", 15*time.Second))
 	calls := NewCallTracker()             // rastreia chamadas armadas por sessão
 	eng := NewEngine(db, api, gate, pay, calls) // a máquina de estados (o cérebro)
