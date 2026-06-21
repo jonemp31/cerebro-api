@@ -49,7 +49,23 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 	}
 	e.db.LogEvent(ctx, lead.ID, "inbound", map[string]any{"body": j.Body, "step": lead.Step})
 
-	e.advance(ctx, lead)
+	// Cancela timers pendentes (o lead respondeu)
+	_ = e.db.CancelActions(ctx, lead.ID)
+
+	// Se o lead estava em follow-up, trata o retorno
+	switch lead.Step {
+	case stepAwaitQ1Fu2:
+		// Voltou depois do follow-up pesado → sequência de comeback, depois continua
+		e.sendComeback(ctx, lead)
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
+		e.advance(ctx, lead)
+	case stepAwaitQ1Fu1:
+		// Voltou depois do 1° follow-up → continua normalmente
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
+		e.advance(ctx, lead)
+	default:
+		e.advance(ctx, lead)
+	}
 }
 
 // advance — a máquina de estados do funil (Fase 1).
@@ -82,6 +98,8 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 			return
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
+		// Agenda follow-up em 5 min (se o lead não responder)
+		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(5*time.Minute), nil)
 
 	case stepAwaitQ1: // respondeu → faz a pergunta
 		e.replyDelay()
@@ -108,9 +126,41 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	}
 }
 
-// HandleTimer — dispara quando um timer vence (esperas/follow-ups). Stub na Fase 1.
+// HandleTimer — dispara quando um timer vence (follow-ups).
 func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
-	log.Printf("[engine] timer %q disparou p/ lead %d (follow-ups entram com a copy de follow-up)", a.Kind, a.LeadID)
+	lead, err := e.db.GetLead(ctx, a.LeadID)
+	if err != nil {
+		log.Printf("[engine] timer: get lead %d: %v", a.LeadID, err)
+		return
+	}
+	log.Printf("[engine] timer %q disparou p/ lead %d (step=%s)", a.Kind, lead.ID, lead.Step)
+
+	switch lead.Step {
+	case stepAwaitQ1:
+		// 1° follow-up — lead não respondeu em 5 min
+		if e.send(ctx, lead, randomFollowUp1()) != nil {
+			return
+		}
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ1Fu1)
+		// Agenda 2° follow-up em mais 5 min
+		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(5*time.Minute), nil)
+
+	case stepAwaitQ1Fu1:
+		// 2° follow-up — lead não respondeu mais 5 min → sequência pesada
+		if e.send(ctx, lead, msgFu2a) != nil {
+			return
+		}
+		time.Sleep(3 * time.Second)
+		if e.send(ctx, lead, msgFu2b) != nil {
+			return
+		}
+		time.Sleep(3 * time.Second)
+		if e.send(ctx, lead, msgFu2c) != nil {
+			return
+		}
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ1Fu2)
+		// Não agenda mais nada — fica dormindo até o lead voltar
+	}
 }
 
 // ── humanização ──────────────────────────────────────────────────────────────
@@ -210,4 +260,21 @@ func (e *Engine) goTo(ctx context.Context, lead *Lead, status, step string) {
 		return
 	}
 	lead.Status, lead.Step = status, step
+}
+
+// sendComeback — sequência de "volta" quando o lead retorna após follow-up pesado.
+func (e *Engine) sendComeback(ctx context.Context, lead *Lead) {
+	e.replyDelay()
+	if e.send(ctx, lead, msgComebackA) != nil {
+		return
+	}
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgComebackB) != nil {
+		return
+	}
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgComebackC) != nil {
+		return
+	}
+	time.Sleep(30 * time.Second)
 }

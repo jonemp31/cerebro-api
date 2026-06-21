@@ -68,8 +68,38 @@ const (
 
 // Passos (steps) do funil.
 const (
-	stepNew     = ""            // lead novo / primeiro contato
-	stepAwaitQ1 = "await_q1"    // mandou "Oi, tudo bem?", aguarda resposta
-	stepAwaitQ2 = "await_q2"    // mandou "O que faz de bom?", aguarda resposta
-	stepPixSent = "pix_sent"    // mandou o Pix, aguardando pagamento (próxima fase)
+	stepNew        = ""              // lead novo / primeiro contato
+	stepAwaitQ1    = "await_q1"      // mandou "gostou?", aguarda resposta
+	stepAwaitQ1Fu1 = "await_q1_fu1"  // 1° follow-up enviado, aguarda resposta
+	stepAwaitQ1Fu2 = "await_q1_fu2"  // 2° follow-up enviado, aguarda resposta (ou dorme)
+	stepAwaitQ2    = "await_q2"      // mandou "O que faz de bom?", aguarda resposta
+	stepPixSent    = "pix_sent"      // mandou o Pix, aguardando pagamento (próxima fase)
+)
+
+// ── Follow-ups do await_q1 ──────────────────────────────────────────────────
+
+// Follow-up 1 — escolha aleatória (5 min sem resposta)
+var followUp1 = []string{
+	"ta aí amor? sumiu rs",
+	"ei sumiu? rs",
+	"oii cade vc?",
+	"ta ocupado amor?",
+}
+
+func randomFollowUp1() string {
+	return followUp1[rand.Intn(len(followUp1))]
+}
+
+// Follow-up 2 — sequência fixa (mais 5 min sem resposta)
+const (
+	msgFu2a = "poxa"
+	msgFu2b = "vai me ignorar mesmo é 😕"
+	msgFu2c = "??"
+)
+
+// Comeback — quando o lead volta depois do follow-up pesado (fu2)
+const (
+	msgComebackA = "até q enfim né rsrs"
+	msgComebackB = "achei q tinha me abandonado aqui rs"
+	msgComebackC = "faz isso mais n pfv tá"
 )
