@@ -205,6 +205,18 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	case stepPixExpired: // 2° PIX expirou — lead perdido
 		log.Printf("[engine] lead %d em pix_expired (lead perdido)", lead.ID)
 
+	case stepDeliveryCallArmed, stepDeliveryCallArmed2: // chamada de entrega armada
+		log.Printf("[engine] lead %d mandou msg com delivery call armada (step=%s)", lead.ID, lead.Step)
+
+	case stepDeliveryGiveUp: // não ligou pra entrega
+		log.Printf("[engine] lead %d em delivery_give_up", lead.ID)
+
+	case stepUpsellPixSent: // aguardando upsell PIX
+		log.Printf("[engine] lead %d mandou msg enquanto aguarda upsell pix", lead.ID)
+
+	case stepDone: // funil completo
+		log.Printf("[engine] lead %d em done (funil completo)", lead.ID)
+
 	default:
 		log.Printf("[engine] passo desconhecido %q (lead %d)", lead.Step, lead.ID)
 	}
@@ -261,7 +273,7 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 		// Timeout 4 min — lead não respondeu, continua mesmo assim (sem delay extra)
 		e.sendPixSequence(ctx, lead)
 
-	case stepPixSent, stepPixSent2, stepPixSent2Fu:
+	case stepPixSent, stepPixSent2, stepPixSent2Fu, stepUpsellPixSent:
 		// Polling de pagamento
 		if a.Kind == "payment_check" {
 			e.checkPayment(ctx, lead, a)
@@ -532,7 +544,7 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 		_ = e.db.UpdatePaymentStatus(ctx, chargeID, "paid")
 		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "charge_id": chargeID})
 		log.Printf("[engine] \xf0\x9f\x92\xb0 lead %d PAGOU! charge=%s", lead.ID, chargeID)
-		e.goTo(ctx, lead, "paid", "paid")
+		e.sendPaidSequence(ctx, lead)
 		// TODO: sequ\xc3\xaancia de compra aprovada
 
 	case "pending":
@@ -549,14 +561,17 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 		_ = e.db.UpdatePaymentStatus(ctx, chargeID, status)
 		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": status, "charge_id": chargeID})
 
-		if lead.Step == stepPixSent {
+		switch lead.Step {
+		case stepPixSent:
 			// 1\xc2\xb0 PIX expirou \xe2\x86\x92 retry com valor menor
 			log.Printf("[engine] lead %d PIX expirou \xe2\x80\x94 enviando retry", lead.ID)
 			e.sendPixRetrySequence(ctx, lead)
-		} else {
-			// 2\xc2\xb0 PIX expirou \xe2\x86\x92 lead perdido
-			log.Printf("[engine] lead %d 2\xc2\xb0 PIX expirou \xe2\x80\x94 desistindo", lead.ID)
+				case stepPixSent2, stepPixSent2Fu:
+			log.Printf("[engine] lead %d 2° PIX expirou — desistindo", lead.ID)
 			e.goTo(ctx, lead, "lost", stepPixExpired)
+		case stepUpsellPixSent:
+			log.Printf("[engine] lead %d upsell PIX expirou", lead.ID)
+			e.goTo(ctx, lead, "paid", stepDone)
 		}
 	}
 }
@@ -608,17 +623,173 @@ func (e *Engine) sendPixRetryFollowUp(ctx context.Context, lead *Lead) {
 	e.goTo(ctx, lead, "awaiting_payment", stepPixSent2Fu)
 }
 
+// ── Compra aprovada + entrega + upsell ──────────────────────────────────────
+
+// sendPaidSequence — sequência completa pós-pagamento: agradecimento + link + chamada de entrega.
+func (e *Engine) sendPaidSequence(ctx context.Context, lead *Lead) {
+	e.goTo(ctx, lead, "paid", "paid")
+	if e.send(ctx, lead, msgPd01) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd02) != nil { return }
+	time.Sleep(15 * time.Second)
+	if e.send(ctx, lead, msgPd03) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgPd04) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgPd05) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgPd06) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgPd07) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd08) != nil { return }
+	time.Sleep(15 * time.Second)
+	if e.send(ctx, lead, msgPd09) != nil { return }
+	time.Sleep(8 * time.Second)
+	if e.send(ctx, lead, msgPd10) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd11) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd12) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgPd13) != nil { return }
+	time.Sleep(28 * time.Second)
+	if e.send(ctx, lead, msgPd14) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd15) != nil { return }
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgPd16) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgPd17) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgPd18) != nil { return }
+	time.Sleep(16 * time.Second)
+	if e.send(ctx, lead, msgPd19) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgPd20) != nil { return }
+	time.Sleep(9 * time.Second)
+	if e.send(ctx, lead, msgPd21) != nil { return }
+	time.Sleep(18 * time.Second)
+	if e.send(ctx, lead, msgPd22) != nil { return }
+	time.Sleep(90 * time.Second)
+	if e.send(ctx, lead, msgPd23) != nil { return }
+	time.Sleep(11 * time.Second)
+	if e.send(ctx, lead, msgPd24) != nil { return }
+	time.Sleep(11 * time.Second)
+	if e.send(ctx, lead, msgPd25) != nil { return }
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgPd26) != nil { return }
+	time.Sleep(12 * time.Second)
+	if e.send(ctx, lead, msgPd27) != nil { return }
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgPd28) != nil { return }
+	time.Sleep(28 * time.Second)
+	if e.send(ctx, lead, msgPd29) != nil { return }
+
+	// Arma chamada de vídeo de entrega
+	e.armVideoCall(ctx, lead, videoEntrega1)
+	time.Sleep(12 * time.Second)
+	if e.send(ctx, lead, msgPd30) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd31) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd32) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd33) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPd34) != nil { return }
+	time.Sleep(12 * time.Second)
+	if e.send(ctx, lead, msgPd35) != nil { return }
+	e.goTo(ctx, lead, "paid", stepDeliveryCallArmed)
+}
+
+// sendPostDeliverySequence — pós-chamada de entrega: espera 5min + upsell.
+func (e *Engine) sendPostDeliverySequence(ctx context.Context, lead *Lead) {
+	// Espera o vídeo terminar (~5 min ou duração do vídeo)
+	time.Sleep(5 * time.Minute)
+	time.Sleep(30 * time.Second)
+	if e.send(ctx, lead, msgUp01) != nil { return }
+	time.Sleep(30 * time.Second)
+	if e.send(ctx, lead, msgUp02) != nil { return }
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgUp03) != nil { return }
+	time.Sleep(26 * time.Second)
+	if e.send(ctx, lead, msgUp04) != nil { return }
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgUp05) != nil { return }
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgUp06) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgUp07) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.sendImageURL(ctx, lead, imgUpsellApp, "", false) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgUp08) != nil { return }
+	time.Sleep(8 * time.Second)
+	if e.send(ctx, lead, msgUp09) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgUp10) != nil { return }
+	time.Sleep(11 * time.Second)
+	if e.send(ctx, lead, msgUp11) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgUp12) != nil { return }
+	time.Sleep(10 * time.Second)
+
+	// Envia PIX upsell (R$14.19–14.99)
+	if e.sendDynamicPixAmount(ctx, lead, 14.19, 14.99) != nil { return }
+	e.goTo(ctx, lead, "awaiting_payment", stepUpsellPixSent)
+	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(0)})
+}
+
+// sendDeliveryCallFollowUp1 — 1ª vez que não ligou pra entrega.
+func (e *Engine) sendDeliveryCallFollowUp1(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgDcf1a) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgDcf1b) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgDcf1c) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgDcf1d) != nil { return }
+	// Re-arma chamada de entrega
+	e.armVideoCall(ctx, lead, videoEntrega1)
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgDcf1e) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgDcf1f) != nil { return }
+	e.goTo(ctx, lead, "paid", stepDeliveryCallArmed2)
+}
+
+// sendDeliveryGiveUp — 2ª vez que não ligou pra entrega → despedida.
+func (e *Engine) sendDeliveryGiveUp(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgDcf2a) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgDcf2b) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgDcf2c) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgDcf2d) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgDcf2e) != nil { return }
+	e.goTo(ctx, lead, "paid", stepDeliveryGiveUp)
+}
+
 
 // HandleCallEvent — processa eventos de chamada (aceita, expirada).
 func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 	var lead *Lead
 	var err error
 
+	// Todos os steps possíveis com chamada armada
+	allArmedSteps := []string{
+		stepCallArmed, stepCallArmed2, stepCallArmed3, stepCallArmed4,
+		stepDeliveryCallArmed, stepDeliveryCallArmed2,
+	}
+
 	if ev.Phone != "" {
 		lead, err = e.db.GetLeadByPhone(ctx, ev.Phone, ev.SessionID)
 	} else {
-		// Expired: busca o lead em qualquer step "call_armed*"
-		for _, step := range []string{stepCallArmed, stepCallArmed2, stepCallArmed3, stepCallArmed4} {
+		// Expired: busca o lead em qualquer step armado
+		for _, step := range allArmedSteps {
 			lead, err = e.db.GetLeadByStep(ctx, ev.SessionID, step)
 			if err == nil {
 				break
@@ -634,13 +805,19 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 
 	switch ev.Event {
 	case "accepted":
-		// Qualquer tentativa — lead ligou → continua a copy principal
-		if strings.HasPrefix(lead.Step, "call_armed") {
+		switch {
+		case strings.HasPrefix(lead.Step, "call_armed"):
+			// Chamada original — continua copy principal
 			log.Printf("[engine] lead %d ligou (step=%s) — continuando copy", lead.ID, lead.Step)
 			e.sendPostCallSequence(ctx, lead)
+		case strings.HasPrefix(lead.Step, "delivery_call"):
+			// Chamada de entrega — espera vídeo terminar, depois upsell
+			log.Printf("[engine] lead %d ligou pra entrega (step=%s) — upsell", lead.ID, lead.Step)
+			e.sendPostDeliverySequence(ctx, lead)
 		}
 	case "expired":
 		switch lead.Step {
+		// ── Chamada original ──
 		case stepCallArmed:
 			log.Printf("[engine] lead %d não ligou (tentativa 1) — follow-up 1", lead.ID)
 			e.sendCallFollowUp1(ctx, lead)
@@ -653,6 +830,13 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 		case stepCallArmed4:
 			log.Printf("[engine] lead %d não ligou (tentativa 4) — desistindo", lead.ID)
 			e.goTo(ctx, lead, "lost", stepCallGiveUp)
+		// ── Chamada de entrega ──
+		case stepDeliveryCallArmed:
+			log.Printf("[engine] lead %d não ligou pra entrega (tentativa 1)", lead.ID)
+			e.sendDeliveryCallFollowUp1(ctx, lead)
+		case stepDeliveryCallArmed2:
+			log.Printf("[engine] lead %d não ligou pra entrega (tentativa 2) — desistindo", lead.ID)
+			e.sendDeliveryGiveUp(ctx, lead)
 		}
 	}
 }

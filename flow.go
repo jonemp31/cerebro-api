@@ -102,7 +102,13 @@ const (
 
 // Vídeos do funil (chamada de vídeo).
 const (
-	videoCall1 = "https://s3.crushzap.com/painel/copy1/videoligacao1.mp4"
+	videoCall1    = "https://s3.crushzap.com/painel/copy1/videoligacao1.mp4"
+	videoEntrega1 = "https://s3.crushzap.com/painel/copy1/entrega1.mp4"
+)
+
+// Imagens do funil (upsell).
+const (
+	imgUpsellApp = "https://s3.crushzap.com/painel/copy1/yasapp.png"
 )
 
 // Dados do Pix (copia-e-cola enviado pelo botão Pix como "chave aleatória").
@@ -133,6 +139,12 @@ const (
 	stepPixSent2    = "pix_sent_2"     // 2° PIX enviado (retry após expirar), polling
 	stepPixSent2Fu  = "pix_sent_2_fu"  // follow-up 10min do 2° PIX enviado, ainda polling
 	stepPixExpired  = "pix_expired"    // 2° PIX também expirou — lead perdido
+	// ── Pós-pagamento (entrega) ──
+	stepDeliveryCallArmed  = "delivery_call"    // chamada de entrega armada — tentativa 1
+	stepDeliveryCallArmed2 = "delivery_call_2"  // tentativa 2
+	stepDeliveryGiveUp     = "delivery_give_up" // não ligou pra entrega
+	stepUpsellPixSent      = "upsell_pix_sent"  // upsell PIX enviado, polling
+	stepDone               = "done"             // funil completo
 )
 
 // ── Follow-ups do await_q1 ──────────────────────────────────────────────────
@@ -216,4 +228,80 @@ const (
 	msgPixFuC = "preciso ir tomar banho..."
 	msgPixFuD = "vem ser feliz, vem?"
 	msgPixFuE = "vem me ver"
+)
+
+// ── Compra aprovada (paid) ──────────────────────────────────────────────────
+
+const (
+	msgPd01 = "notificou aqui, perai amor"
+	msgPd02 = "vou confirmar aqui"
+	msgPd03 = "muitooo obrigada viu amor? ❤️"
+	msgPd04 = "vc é incrível 🎉"
+	msgPd05 = "vai me ajudar mtooo aqui, obg msm 🙏🙏"
+	msgPd06 = "de coração mesmo viu? 😍"
+	msgPd07 = "pronto pra receber o seu prêmio? 🔥"
+	msgPd08 = "seus presentinhos rs"
+	msgPd09 = "afinal vc merece, né? vou liberar tudo aqui agora pra você"
+	msgPd10 = "bem rapidinho"
+	msgPd11 = "e vc me liga dps, tá bom?"
+	msgPd12 = "1 minutinhoo"
+	msgPd13 = "te mandar tudo aqui 🙈"
+	msgPd14 = "prontinhooo"
+	msgPd15 = "só acessar esse link: https://bit.ly/VipYasAqui"
+	msgPd16 = "vai pedir uma senha (1011)"
+	msgPd17 = "sua senha vip é: 1011"
+	msgPd18 = "tá? aí tem tudo q te prometi"
+	msgPd19 = "acessa ai e me avisa se deu certo?"
+	msgPd20 = "pfvzinhoo 🙏🥹"
+	msgPd21 = "foi?"
+	msgPd22 = "espero que vc goste viu rs ❤️"
+	msgPd23 = "sobre a chamada de vídeo q vc ganhou de presente"
+	msgPd24 = "como vc quer fazer?"
+	msgPd25 = "quer q eu te ligue agora"
+	msgPd26 = "ou em outro horário q for melhor pra vc?"
+	msgPd27 = "só me avisa aqui pra"
+	msgPd28 = "eu organizar direitinho contigo"
+	msgPd29 = "se vc puder anjo"
+	msgPd30 = "me liga agora vai"
+	msgPd31 = "qro te mostrar uma coisa"
+	msgPd32 = "veeeem"
+	msgPd33 = "me liga de vídeo aqui"
+	msgPd34 = "rapido anjo"
+	msgPd35 = "tem q ser agora"
+)
+
+// ── Delivery call follow-up (não ligou) ─────────────────────────────────────
+
+const (
+	msgDcf1a = "amor to aqui agora"
+	msgDcf1b = "me liga vai ser rapidinho"
+	msgDcf1c = "dps n vou poder, aí só amanha"
+	msgDcf1d = "me liga aqui"
+	msgDcf1e = "vou te esperar por 5 min só"
+	msgDcf1f = "vem?"
+)
+
+const (
+	msgDcf2a = "vc n vem msm então né?"
+	msgDcf2b = "fiquei te esperando atoa"
+	msgDcf2c = "dps qnd vc puder a gente se fala então"
+	msgDcf2d = "me chama qnd puder cvs"
+	msgDcf2e = "bjo"
+)
+
+// ── Upsell (pós-chamada entrega) ────────────────────────────────────────────
+
+const (
+	msgUp01 = "gostou amorzinho? ❤️"
+	msgUp02 = "quer continuar?"
+	msgUp03 = "vamos?"
+	msgUp04 = "me ajuda só com mais 15 reais pfv"
+	msgUp05 = "que eu continuo até qnd vc quiser"
+	msgUp06 = "prometo"
+	msgUp07 = "qro comprar isso"
+	msgUp08 = "ta na promoção só agora rs"
+	msgUp09 = "topa amor?"
+	msgUp10 = "me ajuda pfv e eu te recompenso dps"
+	msgUp11 = "te mandar meu pix"
+	msgUp12 = "só fazer e aí a gente continua a chamada"
 )
