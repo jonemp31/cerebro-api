@@ -23,6 +23,7 @@ type Lead struct {
 type Action struct {
 	ID      int64
 	LeadID  int64
+	Phone   string
 	Kind    string
 	Payload map[string]any
 }
@@ -109,15 +110,19 @@ func (d *DB) CancelActions(ctx context.Context, leadID int64) error {
 // DueActions — pega (e marca como 'fired') as ações vencidas, de forma atômica.
 func (d *DB) DueActions(ctx context.Context) ([]Action, error) {
 	const q = `
-		UPDATE scheduled_actions SET status='fired', fired_at=now()
-		WHERE id IN (
+		WITH due AS (
 		  SELECT id FROM scheduled_actions
 		  WHERE status='pending' AND fire_at <= now()
 		  ORDER BY fire_at
 		  LIMIT 100
 		  FOR UPDATE SKIP LOCKED
+		), upd AS (
+		  UPDATE scheduled_actions SET status='fired', fired_at=now()
+		  WHERE id IN (SELECT id FROM due)
+		  RETURNING id, lead_id, kind, payload
 		)
-		RETURNING id, lead_id, kind, payload`
+		SELECT u.id, u.lead_id, u.kind, u.payload, l.phone
+		FROM upd u JOIN leads l ON l.id = u.lead_id`
 	rows, err := d.pool.Query(ctx, q)
 	if err != nil {
 		return nil, err
@@ -126,7 +131,7 @@ func (d *DB) DueActions(ctx context.Context) ([]Action, error) {
 	var out []Action
 	for rows.Next() {
 		var a Action
-		if err := rows.Scan(&a.ID, &a.LeadID, &a.Kind, &a.Payload); err != nil {
+		if err := rows.Scan(&a.ID, &a.LeadID, &a.Kind, &a.Payload, &a.Phone); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

@@ -36,6 +36,13 @@ func (c *APIClient) SendPix(ctx context.Context, sessionID, phone, keyType, name
 	return c.post(ctx, fmt.Sprintf("/sessions/%s/send/pix", sessionID), body)
 }
 
+// SendTyping — mostra "digitando..." por durationMs. Retorna na hora (a api só
+// aciona o indicador e agenda parar); quem espera a duração é o chamador.
+func (c *APIClient) SendTyping(ctx context.Context, sessionID, chatID string, durationMs int) error {
+	body, _ := json.Marshal(map[string]any{"chat_id": chatID, "duration_ms": durationMs})
+	return c.post(ctx, fmt.Sprintf("/sessions/%s/chat/typing", sessionID), body)
+}
+
 func (c *APIClient) post(ctx context.Context, path string, body []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {

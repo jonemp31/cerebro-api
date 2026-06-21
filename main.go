@@ -32,8 +32,7 @@ func main() {
 	// Peças
 	api := NewAPIClient(apiURL)         // fala com a api-escala (/send/*)
 	eng := NewEngine(db, api)           // a máquina de estados (o cérebro)
-	q := NewQueue(eng, 512)             // fila 1-a-1 (channel + 1 worker)
-	q.Start()
+	q := NewQueue(eng)                  // fila por-lead (concorrente entre leads, serial por lead)
 	sched := NewScheduler(db, q)        // dispara os timers (esperas/follow-ups)
 	sched.Start(ctx)
 	srv := NewServer(q)                 // recebe os webhooks

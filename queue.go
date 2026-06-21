@@ -5,36 +5,47 @@ import (
 	"log"
 )
 
-// Job — uma unidade de trabalho na fila (mensagem recebida ou timer).
+// Job — uma unidade de trabalho (mensagem recebida ou timer).
 type Job struct {
 	Inbound *InboundJob
 	Timer   *Action
 }
 
-// Queue — fila EM PROCESSO, processada 1 a 1 por um único worker.
-// Isso serializa tudo (evita corrida/duplicação) sem precisar de Redis/Rabbit
-// nesse volume. Não-durável de propósito: a api faz retry de webhook e os
-// timers ficam no banco, então um crash não perde estado.
+// Queue — processamento POR LEAD (Opção C). Cada job roda numa goroutine que
+// trava o lock do lead: leads diferentes em paralelo, mesmo lead serial.
+// Isso permite os delays humanos (30-90s) sem travar os outros leads — e
+// continua sem duplicar (lock por lead + a constraint UNIQUE no banco).
 type Queue struct {
-	ch  chan Job
 	eng *Engine
+	km  *KeyedMutex
 }
 
-func NewQueue(eng *Engine, size int) *Queue {
-	return &Queue{ch: make(chan Job, size), eng: eng}
+func NewQueue(eng *Engine) *Queue {
+	return &Queue{eng: eng, km: NewKeyedMutex()}
 }
 
-func (q *Queue) Start() {
+// Enqueue — dispara o processamento do job na goroutine do seu lead.
+func (q *Queue) Enqueue(job Job) {
+	key := jobKey(job)
+	if key == "" {
+		return
+	}
 	go func() {
-		for job := range q.ch {
-			q.process(job)
-		}
+		q.km.Lock(key)
+		defer q.km.Unlock(key)
+		q.process(job)
 	}()
 }
 
-// Enqueue — coloca na fila. Bloqueia só se o buffer encher (raríssimo nesse volume).
-func (q *Queue) Enqueue(job Job) {
-	q.ch <- job
+// jobKey — a chave de serialização é sempre o telefone do lead.
+func jobKey(job Job) string {
+	switch {
+	case job.Inbound != nil:
+		return job.Inbound.Phone
+	case job.Timer != nil:
+		return job.Timer.Phone
+	}
+	return ""
 }
 
 func (q *Queue) process(job Job) {
