@@ -53,6 +53,11 @@ func (q *Queue) process(job Job) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[queue] panic ao processar job: %v", r)
+			// Safety net: release the send gate if the goroutine panicked
+			// between Acquire and Done — otherwise the session stays locked.
+			if job.Inbound != nil {
+				q.eng.gate.ForceRelease(job.Inbound.SessionID, job.Inbound.Phone)
+			}
 		}
 	}()
 	switch {

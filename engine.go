@@ -9,12 +9,13 @@ import (
 
 // Engine — o cérebro. Recebe eventos (mensagem do lead, timer) e decide a ação.
 type Engine struct {
-	db  *DB
-	api *APIClient
+	db   *DB
+	api  *APIClient
+	gate *SendGate
 }
 
-func NewEngine(db *DB, api *APIClient) *Engine {
-	return &Engine{db: db, api: api}
+func NewEngine(db *DB, api *APIClient, gate *SendGate) *Engine {
+	return &Engine{db: db, api: api, gate: gate}
 }
 
 // InboundJob — uma mensagem recebida de um lead.
@@ -111,27 +112,38 @@ func (e *Engine) typing(ctx context.Context, lead *Lead, d time.Duration) {
 	time.Sleep(d)
 }
 
-// send — mostra "digitando...", espera, e envia o texto.
+// send — adquire o gate da sessão, mostra "digitando...", espera, e envia o texto.
+// O gate garante que só 1 lead por vez "digita" numa sessão — comportamento humano.
 func (e *Engine) send(ctx context.Context, lead *Lead, text string) error {
+	e.gate.Acquire(lead.SessionID, lead.Phone)
+
 	e.typing(ctx, lead, typingFor(text))
 	if err := e.api.SendText(ctx, lead.SessionID, lead.Phone, text); err != nil {
+		e.gate.Done(lead.SessionID, lead.Phone)
 		log.Printf("[engine] send text lead %d: %v", lead.ID, err)
 		return err
 	}
 	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", text, "text", "", lead.SessionID)
 	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"body": text})
+
+	e.gate.Done(lead.SessionID, lead.Phone)
 	return nil
 }
 
-// sendPix — "digitando..." curto e envia o card de Pix.
+// sendPix — adquire o gate, "digitando..." curto e envia o card de Pix.
 func (e *Engine) sendPix(ctx context.Context, lead *Lead) error {
+	e.gate.Acquire(lead.SessionID, lead.Phone)
+
 	e.typing(ctx, lead, cfgTypingBase)
 	if err := e.api.SendPix(ctx, lead.SessionID, lead.Phone, pixKeyType, pixName, pixKey, ""); err != nil {
+		e.gate.Done(lead.SessionID, lead.Phone)
 		log.Printf("[engine] send pix lead %d: %v", lead.ID, err)
 		return err
 	}
 	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[pix]", "pix", "", lead.SessionID)
 	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "pix"})
+
+	e.gate.Done(lead.SessionID, lead.Phone)
 	return nil
 }
 
