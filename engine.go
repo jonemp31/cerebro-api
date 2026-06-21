@@ -650,7 +650,7 @@ func (e *Engine) sendPixRetrySequence(ctx context.Context, lead *Lead) {
 	time.Sleep(31 * time.Second)
 
 	// Gera novo PIX com valor menor (20.01\xe2\x80\x9320.99)
-	if e.sendDynamicPixAmount(ctx, lead, 20.01, 21.99) != nil { return }
+	if e.sendDynamicPixAmount(ctx, lead, 19.01, 20.99) != nil { return }
 
 	time.Sleep(22 * time.Second)
 	if e.send(ctx, lead, msgPixRetryF) != nil { return }
@@ -790,7 +790,7 @@ func (e *Engine) sendPostDeliverySequence(ctx context.Context, lead *Lead) {
 	time.Sleep(10 * time.Second)
 
 	// Envia PIX upsell (R$14.19–14.99)
-	if e.sendDynamicPixAmount(ctx, lead, 14.01, 15.99) != nil { return }
+	if e.sendDynamicPixAmount(ctx, lead, 14.99, 15.99) != nil { return }
 	e.goTo(ctx, lead, "awaiting_payment", stepUpsellPixSent)
 	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(0)})
 }
