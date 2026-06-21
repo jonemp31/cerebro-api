@@ -88,10 +88,25 @@ func (c *PaymentClient) CreateCharge(ctx context.Context, phone string, amount f
 		}
 		tx = obj.Transaction
 	}
-	// Remove espaços do pix_copia_cola e ID (gateway pode retornar com trailing space)
-	tx.PixCopiaCola = strings.TrimSpace(tx.PixCopiaCola)
+	// Sanitiza pix_copia_cola e ID: remove BOM, zero-width chars, espaços, quebras
+	tx.PixCopiaCola = sanitizePix(tx.PixCopiaCola)
 	tx.ID = strings.TrimSpace(tx.ID)
 	return &tx, nil
+}
+
+// sanitizePix — remove BOM, caracteres invisíveis, espaços e quebras de linha.
+func sanitizePix(s string) string {
+	s = strings.TrimSpace(s)
+	// BOM (U+FEFF)
+	s = strings.ReplaceAll(s, "\uFEFF", "")
+	// Zero-width chars: U+200B (zero-width space), U+200C (ZWNJ), U+200D (ZWJ), U+2060 (word joiner)
+	for _, c := range []string{"\u200B", "\u200C", "\u200D", "\u2060"} {
+		s = strings.ReplaceAll(s, c, "")
+	}
+	// Carriage return / newline residuais
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	return s
 }
 
 // CheckStatus — consulta o status de uma cobrança pelo ID.
