@@ -157,8 +157,35 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	case stepCallGiveUp: // desistiu de ligar
 		log.Printf("[engine] lead %d em call_give_up, mandou msg", lead.ID)
 
-	case stepAwaitQ5: // respondeu ao "topa?" → próxima fase da copy
-		log.Printf("[engine] lead %d respondeu ao 'topa?' (step=await_q5, próxima copy pendente)", lead.ID)
+	case stepAwaitQ5: // respondeu ao "topa?" → áudios + pede pix
+		time.Sleep(35 * time.Second)
+		if e.sendAudioURL(ctx, lead, audioYas2) != nil {
+			return
+		}
+		time.Sleep(2 * time.Second)
+		if e.sendAudioURL(ctx, lead, audioYas3) != nil {
+			return
+		}
+		time.Sleep(6 * time.Second)
+		if e.sendAudioURL(ctx, lead, audioYas4) != nil {
+			return
+		}
+		time.Sleep(30 * time.Second)
+		if e.send(ctx, lead, msgHelpToo) != nil {
+			return
+		}
+		time.Sleep(20 * time.Second)
+		if e.send(ctx, lead, msgAskPix) != nil {
+			return
+		}
+		time.Sleep(10 * time.Second)
+		if e.send(ctx, lead, msgCanSendPix) != nil {
+			return
+		}
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ6)
+
+	case stepAwaitQ6: // respondeu → próxima fase da copy
+		log.Printf("[engine] lead %d respondeu ao 'posso te mandar meu pix?' (step=await_q6, próxima copy pendente)", lead.ID)
 
 	case stepPixSent: // aguardando pagamento (próxima fase)
 		log.Printf("[engine] lead %d já no passo pix_sent (aguardando pagamento)", lead.ID)

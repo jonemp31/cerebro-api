@@ -69,12 +69,18 @@ const (
 	msgBothHere  = "vc ta aí, eu to aqui"
 	msgJustUs    = "só nos dois sozinhos rs"
 	msgWanna     = "topa?"
+	msgHelpToo   = "se vc aceitar e puder me ajudar tbm rs"
+	msgAskPix    = "me ajuda com 20 reais no pix amor? 🥹🙏"
+	msgCanSendPix = "posso te mandar meu pix?"
 	msgPixIntro  = "Aqui meu pix"
 )
 
 // Áudios do funil.
 const (
 	audioGreeting = "https://s3.crushzap.com/painel/copy1/yas1.mp3"
+	audioYas2     = "https://s3.crushzap.com/painel/copy1/yas2.mp3"
+	audioYas3     = "https://s3.crushzap.com/painel/copy1/yas3.mp3"
+	audioYas4     = "https://s3.crushzap.com/painel/copy1/yas4.mp3"
 )
 
 // Imagens do funil.
@@ -111,6 +117,7 @@ const (
 	stepCallArmed4  = "call_armed_4"   // tentativa 4 (última)
 	stepCallGiveUp  = "call_give_up"   // desistiu — lead não ligou em nenhuma tentativa
 	stepAwaitQ5     = "await_q5"       // mandou "topa?", aguarda resposta
+	stepAwaitQ6     = "await_q6"       // mandou "posso te mandar meu pix?", aguarda resposta
 	stepPixSent     = "pix_sent"       // mandou o Pix, aguardando pagamento
 )
 
