@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -94,9 +95,15 @@ func (d *DB) LogEvent(ctx context.Context, leadID int64, typ string, data map[st
 // ── scheduled_actions (timers) — infra pronta p/ os follow-ups ────────────────
 
 func (d *DB) ScheduleAction(ctx context.Context, leadID int64, kind string, fireAt time.Time, payload map[string]any) error {
+	if payload == nil {
+		payload = map[string]any{}
+	}
 	_, err := d.pool.Exec(ctx,
 		`INSERT INTO scheduled_actions (lead_id, kind, fire_at, payload) VALUES ($1,$2,$3,$4)`,
 		leadID, kind, fireAt, payload)
+	if err != nil {
+		log.Printf("[db] schedule action failed lead=%d kind=%s: %v", leadID, kind, err)
+	}
 	return err
 }
 
