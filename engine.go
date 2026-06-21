@@ -124,8 +124,29 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ3)
 
-	case stepAwaitQ3: // respondeu ao presente → próxima fase da copy
-		log.Printf("[engine] lead %d respondeu ao presente (step=await_q3, próxima copy pendente)", lead.ID)
+	case stepAwaitQ3: // respondeu ao presente → sequência "ver ao vivo"
+		time.Sleep(35 * time.Second)
+		if e.send(ctx, lead, msgLive) != nil {
+			return
+		}
+		time.Sleep(10 * time.Second)
+		if e.send(ctx, lead, msgEnjoy) != nil {
+			return
+		}
+		time.Sleep(10 * time.Second)
+		if e.send(ctx, lead, msgNotAnyone) != nil {
+			return
+		}
+		time.Sleep(6 * time.Second)
+		if e.send(ctx, lead, msgLikedYou) != nil {
+			return
+		}
+		e.goTo(ctx, lead, "in_flow", stepAwaitQ4)
+		// Agenda follow-up em 3 min
+		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(3*time.Minute), nil)
+
+	case stepAwaitQ4: // respondeu → próxima fase da copy
+		log.Printf("[engine] lead %d respondeu ao 'só pq gostei de vc' (step=await_q4, próxima copy pendente)", lead.ID)
 
 	case stepPixSent: // aguardando pagamento (próxima fase)
 		log.Printf("[engine] lead %d já no passo pix_sent (aguardando pagamento)", lead.ID)
@@ -177,6 +198,10 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ2Fu1)
 		// Não agenda mais nada — dorme até o lead voltar
+
+	case stepAwaitQ4:
+		// Follow-up — lead não respondeu em 3 min (próxima copy define a ação)
+		log.Printf("[engine] timer await_q4 disparou p/ lead %d (follow-up pendente)", lead.ID)
 	}
 }
 

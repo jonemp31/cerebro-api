@@ -42,13 +42,17 @@ func randomGreeting() string {
 }
 
 const (
-	msgShowYou  = "te mostrar uma coisa"
-	msgThatsMe  = "essa sou eu rs"
-	msgLikedIt  = "gostou?"
-	msgAlone    = "vc tá sozinho aí agora? 🙈"
-	msgAloneFu  = "?"
-	msgGift     = "vou te dar um presente agora, tá? ❤️"
-	msgPixIntro = "Aqui meu pix"
+	msgShowYou   = "te mostrar uma coisa"
+	msgThatsMe   = "essa sou eu rs"
+	msgLikedIt   = "gostou?"
+	msgAlone     = "vc tá sozinho aí agora? 🙈"
+	msgAloneFu   = "?"
+	msgGift      = "vou te dar um presente agora, tá? ❤️"
+	msgLive      = "quer me ver ao vivo?"
+	msgEnjoy     = "aproveita"
+	msgNotAnyone = "pq eu não faço isso pra qualquer um não, viu?"
+	msgLikedYou  = "só pq gostei de vc"
+	msgPixIntro  = "Aqui meu pix"
 )
 
 // Áudios do funil.
@@ -77,6 +81,7 @@ const (
 	stepAwaitQ2    = "await_q2"      // mandou "vc tá sozinho?", aguarda resposta
 	stepAwaitQ2Fu1 = "await_q2_fu1"  // follow-up "?" enviado (dorme)
 	stepAwaitQ3    = "await_q3"      // mandou "vou te dar um presente", aguarda resposta
+	stepAwaitQ4    = "await_q4"      // mandou "só pq gostei de vc", aguarda resposta (timer 3min)
 	stepPixSent    = "pix_sent"      // mandou o Pix, aguardando pagamento
 )
 
