@@ -560,25 +560,25 @@ func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 	}
 
 	amount := float64(pp.AmountCents) / 100.0
-	status, err := e.pay.CheckStatus(ctx, lead.Phone, amount, pp.CreatedAt)
+	status, payerName, err := e.pay.CheckStatus(ctx, lead.Phone, amount, pp.CreatedAt)
 	if err != nil {
 		log.Printf("[engine] check payment lead %d: %v", lead.ID, err)
 		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(checkCount)})
 		return
 	}
 
-	log.Printf("[engine] payment check lead=%d amount=%.2f status=%s count=%d step=%s", lead.ID, amount, status, checkCount, lead.Step)
+	log.Printf("[engine] payment check lead=%d amount=%.2f status=%s payer=%s count=%d step=%s", lead.ID, amount, status, payerName, checkCount, lead.Step)
 
 	switch status {
 	case "paid":
 		_ = e.db.CancelActions(ctx, lead.ID)
 		_ = e.db.UpdatePaymentStatusByID(ctx, pp.ID, "paid")
-		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "amount": amount})
+		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "amount": amount, "payer": payerName})
 		log.Printf("[engine] \xf0\x9f\x92\xb0 lead %d PAGOU! amount=%.2f", lead.ID, amount)
 		if lead.Step == stepUpsellPixSent {
 			e.sendUpsellPaidSequence(ctx, lead)
 		} else {
-			e.sendPaidSequence(ctx, lead)
+			e.sendPaidSequence(ctx, lead, payerName)
 		}
 
 	case "pending":
@@ -663,12 +663,16 @@ func (e *Engine) sendPixRetryFollowUp(ctx context.Context, lead *Lead) {
 // ── Compra aprovada + entrega + upsell ──────────────────────────────────────
 
 // sendPaidSequence — sequência completa pós-pagamento: agradecimento + link + chamada de entrega.
-func (e *Engine) sendPaidSequence(ctx context.Context, lead *Lead) {
+func (e *Engine) sendPaidSequence(ctx context.Context, lead *Lead, payerName string) {
 	e.goTo(ctx, lead, "paid", "paid")
 	if e.send(ctx, lead, msgPd01) != nil { return }
 	time.Sleep(5 * time.Second)
 	if e.send(ctx, lead, msgPd02) != nil { return }
 	time.Sleep(15 * time.Second)
+	if payerName != "" {
+		if e.send(ctx, lead, payerName+" né?") != nil { return }
+		time.Sleep(5 * time.Second)
+	}
 	if e.send(ctx, lead, msgPd03) != nil { return }
 	time.Sleep(10 * time.Second)
 	if e.send(ctx, lead, msgPd04) != nil { return }
