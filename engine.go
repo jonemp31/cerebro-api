@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +18,7 @@ type Engine struct {
 	gate  *SendGate
 	pay   *PaymentClient
 	calls *CallTracker
+	once  sync.Map // flags one-shot (call_warn:ID, call_revival:ID)
 }
 
 func NewEngine(db *DB, api *APIClient, gate *SendGate, pay *PaymentClient, calls *CallTracker) *Engine {
@@ -26,7 +29,8 @@ func NewEngine(db *DB, api *APIClient, gate *SendGate, pay *PaymentClient, calls
 func isArmedStep(step string) bool {
 	return strings.HasPrefix(step, "call_armed") ||
 		strings.HasPrefix(step, "delivery_call") ||
-		step == stepUpsellDeliveryArmed
+		step == stepUpsellDeliveryArmed ||
+		step == stepCallRevival
 }
 
 // InboundJob — uma mensagem (ou lote debounced) recebida de um lead.
@@ -170,6 +174,9 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 
 	case stepCallGiveUp: // desistiu de ligar
 		log.Printf("[engine] lead %d em call_give_up, mandou msg", lead.ID)
+
+	case stepCallRevival: // segunda chance armada
+		log.Printf("[engine] lead %d mandou msg com revival armada (step=call_revival)", lead.ID)
 
 	case stepAwaitQ5: // respondeu ao "topa?" → áudios + pede pix
 		time.Sleep(35 * time.Second)
@@ -854,7 +861,7 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 	allArmedSteps := []string{
 		stepCallArmed, stepCallArmed2, stepCallArmed3, stepCallArmed4,
 		stepDeliveryCallArmed, stepDeliveryCallArmed2,
-		stepUpsellDeliveryArmed,
+		stepUpsellDeliveryArmed, stepCallRevival,
 	}
 
 	if ev.Phone != "" {
@@ -894,6 +901,10 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 		case lead.Step == stepUpsellDeliveryArmed:
 			log.Printf("[engine] lead %d ligou pra entrega2 (upsell) — done", lead.ID)
 			e.goTo(ctx, lead, "paid", stepDone)
+		case lead.Step == stepCallRevival:
+			// Segunda chance — lead ligou depois de ter desistido
+			log.Printf("[engine] lead %d ligou na segunda chance (revival) — continuando copy", lead.ID)
+			e.sendPostCallSequence(ctx, lead)
 		}
 
 	case "expired":
@@ -922,6 +933,10 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 		case stepUpsellDeliveryArmed:
 			log.Printf("[engine] lead %d não ligou pra entrega2 (upsell) — done", lead.ID)
 			e.goTo(ctx, lead, "paid", stepDone)
+		case stepCallRevival:
+			// Segunda chance expirou — volta pro give up
+			log.Printf("[engine] lead %d não ligou na segunda chance — volta pra give_up", lead.ID)
+			e.goTo(ctx, lead, "lost", stepCallGiveUp)
 		}
 
 	case "rejected":
@@ -939,6 +954,10 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 				}
 			}
 		}
+
+	case "incoming":
+		// Chamada recebida (antes de aceitar) — cenários avulsos
+		e.handleIncomingCall(ctx, lead)
 	}
 }
 
@@ -960,7 +979,56 @@ func (e *Engine) notifyAndRearmOthers(ctx context.Context, sessionID string, oth
 	}
 }
 
-// sendCallFollowUp1 — 1ª vez que não ligou.
+// handleIncomingCall — trata chamada recebida pra cenários avulsos:
+// 1) Lead pós-chamada/pré-PIX insistindo em ligar → aviso (1x)
+// 2) Lead em give-up que ligou → segunda chance (1x)
+func (e *Engine) handleIncomingCall(ctx context.Context, lead *Lead) {
+	switch lead.Step {
+	case stepAwaitQ5, stepAwaitQ6:
+		// Pós-chamada, pré-PIX: lead insiste em ligar
+		key := fmt.Sprintf("call_warn:%d", lead.ID)
+		if _, loaded := e.once.LoadOrStore(key, true); !loaded {
+			log.Printf("[engine] lead %d ligando pós-chamada/pré-PIX — aviso (1x)", lead.ID)
+			e.sendCallInsistWarning(ctx, lead)
+		}
+
+	case stepCallGiveUp:
+		// Lead desistiu mas agora ligou — segunda chance
+		key := fmt.Sprintf("call_revival:%d", lead.ID)
+		if _, loaded := e.once.LoadOrStore(key, true); !loaded {
+			log.Printf("[engine] lead %d ligou depois de give-up — segunda chance", lead.ID)
+			e.sendCallGiveUpRevival(ctx, lead)
+		}
+	}
+}
+
+// sendCallInsistWarning — "amooor, não precisa ligar" (1x, pós-chamada/pré-PIX).
+func (e *Engine) sendCallInsistWarning(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgInsist1) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgInsist2) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgInsist3) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgInsist4) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgInsist5) != nil { return }
+	// Lead continua no mesmo step — a copy segue normalmente após 20s
+}
+
+// sendCallGiveUpRevival — "vi que me ligou" → arma accept → segunda chance.
+func (e *Engine) sendCallGiveUpRevival(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgRevival1) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgRevival2) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgRevival3) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgRevival4) != nil { return }
+	// Arma video-chamada — segunda chance
+	e.armVideoCall(ctx, lead, videoCall1)
+	e.goTo(ctx, lead, "in_flow", stepCallRevival)
+}
 func (e *Engine) sendCallFollowUp1(ctx context.Context, lead *Lead) {
 	if e.send(ctx, lead, msgCf1a) != nil { return }
 	time.Sleep(5 * time.Second)

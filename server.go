@@ -40,6 +40,7 @@ type waWebhook struct {
 		MessageID  string `json:"messageId"`
 		NotifyName string `json:"notifyName"`
 		IsGroup    bool   `json:"isGroup"`
+		Sender     string `json:"sender"`
 	} `json:"data"`
 }
 
@@ -100,6 +101,19 @@ func (s *Server) handleWA(w http.ResponseWriter, r *http.Request) {
 			SessionID: p.SessionID,
 			Event:     "rejected",
 		}})
+	case "whatsapp_call":
+		// Chamada recebida (antes de aceitar/rejeitar)
+		phone := digits(p.Data.Sender)
+		if phone == "" {
+			phone = p.Data.FromNumber
+		}
+		if phone != "" {
+			s.q.Enqueue(Job{CallEvent: &CallEventJob{
+				Phone:     phone,
+				SessionID: p.SessionID,
+				Event:     "incoming",
+			}})
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }

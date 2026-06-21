@@ -134,6 +134,7 @@ const (
 	stepCallArmed3  = "call_armed_3"   // tentativa 3
 	stepCallArmed4  = "call_armed_4"   // tentativa 4 (última)
 	stepCallGiveUp  = "call_give_up"   // desistiu — lead não ligou em nenhuma tentativa
+	stepCallRevival = "call_revival"   // segunda chance — lead ligou depois de desistir
 	stepAwaitQ5     = "await_q5"       // mandou "topa?", aguarda resposta
 	stepAwaitQ6     = "await_q6"       // mandou "posso te mandar meu pix?", aguarda resposta
 	stepPixSent     = "pix_sent"       // 1° PIX enviado, polling
@@ -324,4 +325,23 @@ const (
 
 const (
 	msgCallBusy = "perai amor, me liga daqui 2 minutinhos q consigo te atender, tá? ❤️"
+)
+
+// ── Insistência pós-chamada / pré-PIX (lead ligando sem precisar) ───────────
+
+const (
+	msgInsist1 = "amooor"
+	msgInsist2 = "não precisa continuar me ligando"
+	msgInsist3 = "já fiz a chamada grátis com vc né"
+	msgInsist4 = "quer ver mais é?"
+	msgInsist5 = "só me ajuda agora com um pix e eu já te ligo..."
+)
+
+// ── Revivência do give-up (lead ligou depois de desistir) ───────────────────
+
+const (
+	msgRevival1 = "amor! vi que vc me ligou"
+	msgRevival2 = "desculpa, n pude atender antes"
+	msgRevival3 = "to aqui agora, me liga de novo?"
+	msgRevival4 = "vai, agora eu consigo ❤️"
 )
