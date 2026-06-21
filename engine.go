@@ -310,13 +310,17 @@ func (e *Engine) typing(ctx context.Context, lead *Lead, d time.Duration) {
 	time.Sleep(d)
 }
 
-// send — adquire o gate da sessão, mostra "digitando...", espera, e envia o texto.
-// O gate garante que só 1 lead por vez "digita" numa sessão — comportamento humano.
+// send — adquire o gate da sessão e envia o texto com "digitando..." nativo.
+// O delay é calculado pelo tamanho do texto (base + por-char, com teto de 15s).
+// O wa-js mostra "digitando..." pelo tempo configurado e depois envia — tudo numa chamada.
 func (e *Engine) send(ctx context.Context, lead *Lead, text string) error {
 	e.gate.Acquire(lead.SessionID, lead.Phone)
 
-	e.typing(ctx, lead, typingFor(text))
-	if err := e.api.SendText(ctx, lead.SessionID, lead.Phone, text); err != nil {
+	delaySec := int(typingFor(text).Seconds())
+	if delaySec < 1 {
+		delaySec = 1
+	}
+	if err := e.api.SendText(ctx, lead.SessionID, lead.Phone, text, delaySec); err != nil {
 		e.gate.Done(lead.SessionID, lead.Phone)
 		log.Printf("[engine] send text lead %d: %v", lead.ID, err)
 		return err

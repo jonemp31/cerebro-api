@@ -26,8 +26,8 @@ func NewAPIClient(baseURL string) *APIClient {
 	}
 }
 
-func (c *APIClient) SendText(ctx context.Context, sessionID, phone, text string) error {
-	body, _ := json.Marshal(map[string]string{"phone": phone, "text": text})
+func (c *APIClient) SendText(ctx context.Context, sessionID, phone, text string, delaySec int) error {
+	body, _ := json.Marshal(map[string]any{"phone": phone, "text": text, "delay": delaySec})
 	return c.post(ctx, fmt.Sprintf("/sessions/%s/send/text", sessionID), body)
 }
 
