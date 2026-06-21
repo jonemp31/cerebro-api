@@ -56,13 +56,29 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	switch lead.Step {
 
-	case stepNew: // primeiro contato → cumprimenta + áudio
+	case stepNew: // primeiro contato → sequência de apresentação
 		e.replyDelay()
 		if e.send(ctx, lead, randomGreeting()) != nil {
 			return
 		}
 		time.Sleep(10 * time.Second)
 		if e.sendAudioURL(ctx, lead, audioGreeting) != nil {
+			return
+		}
+		time.Sleep(30 * time.Second)
+		if e.send(ctx, lead, msgShowYou) != nil {
+			return
+		}
+		time.Sleep(10 * time.Second)
+		if e.sendImageURL(ctx, lead, imgProfile, "") != nil {
+			return
+		}
+		time.Sleep(5 * time.Second)
+		if e.send(ctx, lead, msgThatsMe) != nil {
+			return
+		}
+		time.Sleep(5 * time.Second)
+		if e.send(ctx, lead, msgLikedIt) != nil {
 			return
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
@@ -167,6 +183,22 @@ func (e *Engine) sendAudioURL(ctx context.Context, lead *Lead, audioURL string) 
 	}
 	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[audio]", "audio", "", lead.SessionID)
 	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "audio", "url": audioURL})
+
+	e.gate.Done(lead.SessionID, lead.Phone)
+	return nil
+}
+
+// sendImageURL — adquire o gate e envia imagem via URL com caption opcional.
+func (e *Engine) sendImageURL(ctx context.Context, lead *Lead, imageURL, caption string) error {
+	e.gate.Acquire(lead.SessionID, lead.Phone)
+
+	if err := e.api.SendImageURL(ctx, lead.SessionID, lead.Phone, imageURL, caption); err != nil {
+		e.gate.Done(lead.SessionID, lead.Phone)
+		log.Printf("[engine] send image lead %d: %v", lead.ID, err)
+		return err
+	}
+	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[image] "+caption, "image", "", lead.SessionID)
+	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "image", "url": imageURL})
 
 	e.gate.Done(lead.SessionID, lead.Phone)
 	return nil

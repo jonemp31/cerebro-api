@@ -47,6 +47,16 @@ func (c *APIClient) SendAudioURL(ctx context.Context, sessionID, phone, audioURL
 	return c.postForm(ctx, fmt.Sprintf("/sessions/%s/send/audio", sessionID), form)
 }
 
+// SendImageURL — envia imagem via URL com caption opcional.
+func (c *APIClient) SendImageURL(ctx context.Context, sessionID, phone, imageURL, caption string) error {
+	form := url.Values{
+		"phone":   {phone},
+		"url":     {imageURL},
+		"caption": {caption},
+	}
+	return c.postForm(ctx, fmt.Sprintf("/sessions/%s/send/image", sessionID), form)
+}
+
 // SendTyping — mostra "digitando..." por durationMs. Retorna na hora (a api só
 // aciona o indicador e agenda parar); quem espera a duração é o chamador.
 func (c *APIClient) SendTyping(ctx context.Context, sessionID, chatID string, durationMs int) error {

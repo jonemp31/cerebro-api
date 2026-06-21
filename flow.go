@@ -42,6 +42,9 @@ func randomGreeting() string {
 }
 
 const (
+	msgShowYou  = "te mostrar uma coisa"
+	msgThatsMe  = "essa sou eu rs"
+	msgLikedIt  = "gostou?"
 	msgQuestion = "O que faz de bom por aí?"
 	msgPixIntro = "Aqui meu pix"
 )
@@ -49,6 +52,11 @@ const (
 // Áudios do funil.
 const (
 	audioGreeting = "https://s3.crushzap.com/painel/copy1/yas1.mp3"
+)
+
+// Imagens do funil.
+const (
+	imgProfile = "https://s3.crushzap.com/painel/copy1/yasfoto1.jpg"
 )
 
 // Dados do Pix (copia-e-cola enviado pelo botão Pix como "chave aleatória").
