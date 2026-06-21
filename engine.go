@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"math/rand"
 	"time"
 )
 
@@ -87,13 +86,9 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 
 // ── humanização ──────────────────────────────────────────────────────────────
 
-// replyDelay — espera "lendo/pensando" (random entre min e max) antes de responder.
+// replyDelay — aplica o delay de "leitura" humanizado baseado no horário de SP.
 func (e *Engine) replyDelay() {
-	d := cfgMinDelay
-	if cfgMaxDelay > cfgMinDelay {
-		d += time.Duration(rand.Int63n(int64(cfgMaxDelay - cfgMinDelay)))
-	}
-	time.Sleep(d)
+	humanDelay()
 }
 
 // typingFor — duração do "digitando..." proporcional ao texto (base + por-char, com teto).
