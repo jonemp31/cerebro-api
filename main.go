@@ -33,8 +33,8 @@ func main() {
 	// Peças
 	api := NewAPIClient(apiURL)         // fala com a api-escala (/send/*)
 	pay := NewPaymentClient(            // gateway de pagamento (Nexus Pay)
-		env("NEXUS_PAY_URL", "https://webdurov.autopilots.trade/webhook/nexus-pay"),
-		env("NEXUS_CHECK_URL", "https://edurov.autopilots.trade/webhook-test/nexus-consulta"))
+		env("NEXUS_PAY_URL", "https://webhook.crushzap.com/webhook/nexus-pay"),
+		env("NEXUS_CHECK_URL", "https://webhook.crushzap.com/webhook/nexus-consulta"))
 	gate := NewSendGate(envDur("SEND_GATE_THRESHOLD", 15*time.Second))
 	calls := NewCallTracker()             // rastreia chamadas armadas por sessão
 	eng := NewEngine(db, api, gate, pay, calls) // a máquina de estados (o cérebro)

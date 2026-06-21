@@ -56,18 +56,38 @@ func (c *PaymentClient) CreateCharge(ctx context.Context, phone string, amount f
 		return nil, fmt.Errorf("create charge HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 
-	// Resposta é um objeto: {"success":true,"transaction":{...}}
-	var result struct {
-		Success     bool      `json:"success"`
-		Transaction PixCharge `json:"transaction"`
+	// O gateway pode retornar objeto {"success":...} ou array [{"success":...}].
+	// Tratamos os dois formatos.
+	raw = bytes.TrimSpace(raw)
+	var tx PixCharge
+	if len(raw) > 0 && raw[0] == '[' {
+		// Array: [{"success":true,"transaction":{...}}]
+		var arr []struct {
+			Success     bool      `json:"success"`
+			Transaction PixCharge `json:"transaction"`
+		}
+		if err := json.Unmarshal(raw, &arr); err != nil {
+			return nil, fmt.Errorf("parse charge response (array): %w (body: %s)", err, string(raw))
+		}
+		if len(arr) == 0 || !arr[0].Success {
+			return nil, fmt.Errorf("charge creation failed (body: %s)", string(raw))
+		}
+		tx = arr[0].Transaction
+	} else {
+		// Objeto: {"success":true,"transaction":{...}}
+		var obj struct {
+			Success     bool      `json:"success"`
+			Transaction PixCharge `json:"transaction"`
+		}
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return nil, fmt.Errorf("parse charge response (object): %w (body: %s)", err, string(raw))
+		}
+		if !obj.Success {
+			return nil, fmt.Errorf("charge creation failed (body: %s)", string(raw))
+		}
+		tx = obj.Transaction
 	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("parse charge response: %w (body: %s)", err, string(raw))
-	}
-	if !result.Success {
-		return nil, fmt.Errorf("charge creation failed (body: %s)", string(raw))
-	}
-	return &result.Transaction, nil
+	return &tx, nil
 }
 
 // CheckStatus — consulta o status de uma cobrança pelo ID.
