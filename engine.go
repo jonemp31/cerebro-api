@@ -105,34 +105,8 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	switch lead.Step {
 
-	case stepNew: // primeiro contato → sequência de apresentação
-		e.replyDelay()
-		if e.send(ctx, lead, randomGreeting()) != nil {
-			return
-		}
-		time.Sleep(10 * time.Second)
-		if e.sendAudioURL(ctx, lead, audioGreeting) != nil {
-			return
-		}
-		time.Sleep(30 * time.Second)
-		if e.send(ctx, lead, msgShowYou) != nil {
-			return
-		}
-		time.Sleep(10 * time.Second)
-		if e.sendImageURL(ctx, lead, imgProfile, "", false) != nil {
-			return
-		}
-		time.Sleep(5 * time.Second)
-		if e.send(ctx, lead, msgThatsMe) != nil {
-			return
-		}
-		time.Sleep(5 * time.Second)
-		if e.send(ctx, lead, msgLikedIt) != nil {
-			return
-		}
-		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
-		// Agenda follow-up em 5 min (se o lead não responder)
-		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(5*time.Minute), nil)
+	case stepNew: // TESTE: pula direto pro envio de PIX + polling
+		e.sendPixSequence(ctx, lead)
 
 	case stepAwaitQ1: // respondeu ao "gostou?" → 31s → "vc tá sozinho?"
 		time.Sleep(31 * time.Second)
