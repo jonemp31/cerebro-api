@@ -32,7 +32,7 @@ func main() {
 
 	// Peças
 	api := NewAPIClient(apiURL)         // fala com a api-escala (/send/*)
-	gate := NewSendGate(envDur("SEND_GATE_THRESHOLD", 60*time.Second))
+	gate := NewSendGate(envDur("SEND_GATE_THRESHOLD", 15*time.Second))
 	eng := NewEngine(db, api, gate)     // a máquina de estados (o cérebro)
 	q := NewQueue(eng)                  // fila por-lead (concorrente entre leads, serial por lead)
 	debounce := NewDebouncer(q,          // agrupa msgs rápidas do mesmo lead (8-12s)
