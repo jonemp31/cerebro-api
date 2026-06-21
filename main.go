@@ -32,8 +32,11 @@ func main() {
 
 	// Peças
 	api := NewAPIClient(apiURL)         // fala com a api-escala (/send/*)
+	pay := NewPaymentClient(            // gateway de pagamento (Nexus Pay)
+		env("NEXUS_PAY_URL", "https://webdurov.autopilots.trade/webhook/nexus-pay"),
+		env("NEXUS_CHECK_URL", "https://edurov.autopilots.trade/webhook-test/nexus-consulta"))
 	gate := NewSendGate(envDur("SEND_GATE_THRESHOLD", 15*time.Second))
-	eng := NewEngine(db, api, gate)     // a máquina de estados (o cérebro)
+	eng := NewEngine(db, api, gate, pay) // a máquina de estados (o cérebro)
 	q := NewQueue(eng)                  // fila por-lead (concorrente entre leads, serial por lead)
 	debounce := NewDebouncer(q,          // agrupa msgs rápidas do mesmo lead (8-12s)
 		envDur("DEBOUNCE_MIN", 8*time.Second),

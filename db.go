@@ -175,3 +175,35 @@ func (d *DB) GetLeadByStep(ctx context.Context, sessionID, step string) (*Lead, 
 	}
 	return &l, nil
 }
+
+// ── payments ────────────────────────────────────────────────────────────────
+
+// InsertPayment — registra uma cobrança Pix no banco.
+func (d *DB) InsertPayment(ctx context.Context, leadID int64, gateway, chargeID string, amountCents int, brCode string) error {
+	_, err := d.pool.Exec(ctx,
+		`INSERT INTO payments (lead_id, gateway, gateway_charge_id, amount_cents, br_code, status)
+		 VALUES ($1, $2, $3, $4, $5, 'pending')`,
+		leadID, gateway, chargeID, amountCents, brCode)
+	return err
+}
+
+// GetPendingPayment — retorna o charge_id do pagamento pendente mais recente do lead.
+func (d *DB) GetPendingPayment(ctx context.Context, leadID int64) (string, error) {
+	var chargeID string
+	err := d.pool.QueryRow(ctx,
+		`SELECT gateway_charge_id FROM payments
+		 WHERE lead_id=$1 AND status='pending'
+		 ORDER BY created_at DESC LIMIT 1`, leadID).Scan(&chargeID)
+	return chargeID, err
+}
+
+// UpdatePaymentStatus — atualiza o status de um pagamento (paid, expired, cancelled).
+func (d *DB) UpdatePaymentStatus(ctx context.Context, chargeID, status string) error {
+	q := `UPDATE payments SET status=$2`
+	if status == "paid" {
+		q += `, paid_at=now()`
+	}
+	q += ` WHERE gateway_charge_id=$1`
+	_, err := d.pool.Exec(ctx, q, chargeID, status)
+	return err
+}

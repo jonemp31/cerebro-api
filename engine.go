@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log"
+	"math"
+	"math/rand"
 	"strings"
 	"time"
 )
@@ -12,10 +14,11 @@ type Engine struct {
 	db   *DB
 	api  *APIClient
 	gate *SendGate
+	pay  *PaymentClient
 }
 
-func NewEngine(db *DB, api *APIClient, gate *SendGate) *Engine {
-	return &Engine{db: db, api: api, gate: gate}
+func NewEngine(db *DB, api *APIClient, gate *SendGate, pay *PaymentClient) *Engine {
+	return &Engine{db: db, api: api, gate: gate, pay: pay}
 }
 
 // InboundJob — uma mensagem (ou lote debounced) recebida de um lead.
@@ -248,6 +251,12 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 	case stepAwaitQ6:
 		// Timeout 4 min — lead não respondeu, continua mesmo assim (sem delay extra)
 		e.sendPixSequence(ctx, lead)
+
+	case stepPixSent:
+		// Polling de pagamento
+		if a.Kind == "payment_check" {
+			e.checkPayment(ctx, lead)
+		}
 	}
 }
 
@@ -423,9 +432,12 @@ func (e *Engine) sendPixSequence(ctx context.Context, lead *Lead) {
 		return
 	}
 	time.Sleep(3 * time.Second)
-	if e.sendPix(ctx, lead) != nil {
+
+	// Gera cobrança dinâmica no gateway (valor aleatório 29.01–29.99)
+	if e.sendDynamicPix(ctx, lead) != nil {
 		return
 	}
+
 	time.Sleep(8 * time.Second)
 	if e.send(ctx, lead, msgSendReceipt) != nil {
 		return
@@ -439,6 +451,75 @@ func (e *Engine) sendPixSequence(ctx context.Context, lead *Lead) {
 		return
 	}
 	e.goTo(ctx, lead, "awaiting_payment", stepPixSent)
+	// Inicia polling de pagamento a cada ~20s
+	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(20*time.Second), nil)
+}
+
+// sendDynamicPix — cria cobrança no gateway e envia a chave Pix dinâmica.
+func (e *Engine) sendDynamicPix(ctx context.Context, lead *Lead) error {
+	// Valor aleatório entre 29.01 e 29.99
+	amount := 29.01 + rand.Float64()*0.98
+	amount = math.Round(amount*100) / 100
+
+	charge, err := e.pay.CreateCharge(ctx, lead.Phone, amount, "Oferta1")
+	if err != nil {
+		log.Printf("[engine] create charge lead %d: %v", lead.ID, err)
+		return err
+	}
+	log.Printf("[engine] charge criada: lead=%d amount=%.2f charge_id=%s", lead.ID, amount, charge.ID)
+
+	// Salva no banco
+	amountCents := int(amount * 100)
+	_ = e.db.InsertPayment(ctx, lead.ID, "nexus", charge.ID, amountCents, charge.PixCopiaCola)
+
+	// Envia via WhatsApp com a chave dinâmica
+	e.gate.Acquire(lead.SessionID, lead.Phone)
+	e.typing(ctx, lead, cfgTypingBase)
+	if err := e.api.SendPix(ctx, lead.SessionID, lead.Phone, "EVP", pixName, charge.PixCopiaCola, ""); err != nil {
+		e.gate.Done(lead.SessionID, lead.Phone)
+		log.Printf("[engine] send dynamic pix lead %d: %v", lead.ID, err)
+		return err
+	}
+	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[pix]", "pix", "", lead.SessionID)
+	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "pix", "charge_id": charge.ID, "amount": amount})
+	e.gate.Done(lead.SessionID, lead.Phone)
+	return nil
+}
+
+// checkPayment — consulta o status do pagamento no gateway.
+func (e *Engine) checkPayment(ctx context.Context, lead *Lead) {
+	chargeID, err := e.db.GetPendingPayment(ctx, lead.ID)
+	if err != nil {
+		log.Printf("[engine] get pending payment lead %d: %v", lead.ID, err)
+		return
+	}
+
+	status, err := e.pay.CheckStatus(ctx, chargeID)
+	if err != nil {
+		log.Printf("[engine] check payment lead %d: %v", lead.ID, err)
+		// Reagenda em caso de erro de rede
+		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(20*time.Second), nil)
+		return
+	}
+
+	log.Printf("[engine] payment check lead=%d charge=%s status=%s", lead.ID, chargeID, status)
+
+	switch status {
+	case "paid":
+		_ = e.db.UpdatePaymentStatus(ctx, chargeID, "paid")
+		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "charge_id": chargeID})
+		log.Printf("[engine] 💰 lead %d PAGOU! charge=%s", lead.ID, chargeID)
+		e.goTo(ctx, lead, "paid", "paid")
+		// TODO: sequência de compra aprovada
+	case "pending":
+		// Reagenda em 20s
+		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(20*time.Second), nil)
+	case "expired", "cancelled":
+		_ = e.db.UpdatePaymentStatus(ctx, chargeID, status)
+		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": status, "charge_id": chargeID})
+		log.Printf("[engine] lead %d payment %s: charge=%s", lead.ID, status, chargeID)
+		// TODO: handle expired/cancelled
+	}
 }
 
 // HandleCallEvent — processa eventos de chamada (aceita, expirada).
