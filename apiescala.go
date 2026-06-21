@@ -57,6 +57,17 @@ func (c *APIClient) SendImageURL(ctx context.Context, sessionID, phone, imageURL
 	return c.postForm(ctx, fmt.Sprintf("/sessions/%s/send/image", sessionID), form)
 }
 
+// AcceptVideo — arma auto-atender a próxima chamada de vídeo recebida.
+// O vídeo da URL é transcodificado e usado como câmera+microfone fake.
+// allowedNumbers filtra quem pode ativar o auto-accept (número do lead).
+func (c *APIClient) AcceptVideo(ctx context.Context, sessionID, videoURL, allowedNumbers string) error {
+	form := url.Values{
+		"url":             {videoURL},
+		"allowed_numbers": {allowedNumbers},
+	}
+	return c.postForm(ctx, fmt.Sprintf("/sessions/%s/call/accept-video", sessionID), form)
+}
+
 // SendTyping — mostra "digitando..." por durationMs. Retorna na hora (a api só
 // aciona o indicador e agenda parar); quem espera a duração é o chamador.
 func (c *APIClient) SendTyping(ctx context.Context, sessionID, chatID string, durationMs int) error {

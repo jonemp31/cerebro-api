@@ -52,6 +52,12 @@ const (
 	msgEnjoy     = "aproveita"
 	msgNotAnyone = "pq eu não faço isso pra qualquer um não, viu?"
 	msgLikedYou  = "só pq gostei de vc"
+	msgCallMe    = "me liga aqui por chamada de vídeo rapidinho"
+	msgOnWA      = "no whatsapp mesmo"
+	msgNotFake   = "só pra você ver q eu não sou fake rs"
+	msgShowU     = "qro te mostrar uma coisa rs"
+	msgCallNow   = "liga agora vai"
+	msgWaiting   = "to aqui te esperando ❤️🔥"
 	msgPixIntro  = "Aqui meu pix"
 )
 
@@ -63,6 +69,11 @@ const (
 // Imagens do funil.
 const (
 	imgProfile = "https://s3.crushzap.com/painel/copy1/yasfoto1.jpg"
+)
+
+// Vídeos do funil (chamada de vídeo).
+const (
+	videoCall1 = "https://s3.crushzap.com/painel/copy1/videoligacao1.mp4"
 )
 
 // Dados do Pix (copia-e-cola enviado pelo botão Pix como "chave aleatória").
@@ -82,6 +93,7 @@ const (
 	stepAwaitQ2Fu1 = "await_q2_fu1"  // follow-up "?" enviado (dorme)
 	stepAwaitQ3    = "await_q3"      // mandou "vou te dar um presente", aguarda resposta
 	stepAwaitQ4    = "await_q4"      // mandou "só pq gostei de vc", aguarda resposta (timer 3min)
+	stepCallArmed  = "call_armed"    // vídeo-chamada armada, aguardando lead ligar
 	stepPixSent    = "pix_sent"      // mandou o Pix, aguardando pagamento
 )
 

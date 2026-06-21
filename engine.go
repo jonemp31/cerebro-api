@@ -145,8 +145,12 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 		// Agenda follow-up em 3 min
 		_ = e.db.ScheduleAction(ctx, lead.ID, "followup", time.Now().Add(3*time.Minute), nil)
 
-	case stepAwaitQ4: // respondeu → próxima fase da copy
-		log.Printf("[engine] lead %d respondeu ao 'só pq gostei de vc' (step=await_q4, próxima copy pendente)", lead.ID)
+	case stepAwaitQ4: // respondeu → 30s → sequência "liga pra mim"
+		time.Sleep(30 * time.Second)
+		e.sendCallSequence(ctx, lead)
+
+	case stepCallArmed: // vídeo-chamada armada, lead mandou msg em vez de ligar
+		log.Printf("[engine] lead %d mandou msg com call armada (step=call_armed)", lead.ID)
 
 	case stepPixSent: // aguardando pagamento (próxima fase)
 		log.Printf("[engine] lead %d já no passo pix_sent (aguardando pagamento)", lead.ID)
@@ -200,8 +204,8 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 		// Não agenda mais nada — dorme até o lead voltar
 
 	case stepAwaitQ4:
-		// Follow-up — lead não respondeu em 3 min (próxima copy define a ação)
-		log.Printf("[engine] timer await_q4 disparou p/ lead %d (follow-up pendente)", lead.ID)
+		// Timeout 3 min — lead não respondeu, continua a copy mesmo assim
+		e.sendCallSequence(ctx, lead)
 	}
 }
 
@@ -319,4 +323,45 @@ func (e *Engine) sendComeback(ctx context.Context, lead *Lead) {
 		return
 	}
 	time.Sleep(30 * time.Second)
+}
+
+// sendCallSequence — sequência "liga pra mim" + arma auto-atender vídeo.
+// Usada tanto quando o lead responde (via advance) quanto no timeout (via HandleTimer).
+func (e *Engine) sendCallSequence(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgCallMe) != nil {
+		return
+	}
+	time.Sleep(8 * time.Second)
+	if e.send(ctx, lead, msgOnWA) != nil {
+		return
+	}
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgNotFake) != nil {
+		return
+	}
+	time.Sleep(6 * time.Second)
+	if e.send(ctx, lead, msgShowU) != nil {
+		return
+	}
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgCallNow) != nil {
+		return
+	}
+	time.Sleep(3 * time.Second)
+	if e.send(ctx, lead, msgWaiting) != nil {
+		return
+	}
+	// Arma o auto-atender em vídeo (só aceita ligação do número do lead)
+	e.armVideoCall(ctx, lead, videoCall1)
+	e.goTo(ctx, lead, "in_flow", stepCallArmed)
+}
+
+// armVideoCall — arma o auto-accept de chamada de vídeo na api-escala.
+func (e *Engine) armVideoCall(ctx context.Context, lead *Lead, videoURL string) {
+	if err := e.api.AcceptVideo(ctx, lead.SessionID, videoURL, lead.Phone); err != nil {
+		log.Printf("[engine] arm video call lead %d: %v", lead.ID, err)
+		return
+	}
+	log.Printf("[engine] vídeo-chamada armada para lead %d (phone=%s)", lead.ID, lead.Phone)
+	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "arm_video_call", "video": videoURL, "phone": lead.Phone})
 }
