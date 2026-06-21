@@ -46,6 +46,11 @@ const (
 	msgPixIntro = "Aqui meu pix"
 )
 
+// Áudios do funil.
+const (
+	audioGreeting = "https://s3.crushzap.com/painel/copy1/yas1.mp3"
+)
+
 // Dados do Pix (copia-e-cola enviado pelo botão Pix como "chave aleatória").
 const (
 	pixKeyType = "EVP" // EVP = chave aleatória

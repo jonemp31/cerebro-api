@@ -56,9 +56,13 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 func (e *Engine) advance(ctx context.Context, lead *Lead) {
 	switch lead.Step {
 
-	case stepNew: // primeiro contato → cumprimenta
+	case stepNew: // primeiro contato → cumprimenta + áudio
 		e.replyDelay()
 		if e.send(ctx, lead, randomGreeting()) != nil {
+			return
+		}
+		time.Sleep(10 * time.Second)
+		if e.sendAudioURL(ctx, lead, audioGreeting) != nil {
 			return
 		}
 		e.goTo(ctx, lead, "in_flow", stepAwaitQ1)
@@ -146,6 +150,23 @@ func (e *Engine) sendPix(ctx context.Context, lead *Lead) error {
 	}
 	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[pix]", "pix", "", lead.SessionID)
 	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "pix"})
+
+	e.gate.Done(lead.SessionID, lead.Phone)
+	return nil
+}
+
+// sendAudioURL — adquire o gate e envia áudio via URL.
+// A api-escala baixa o arquivo e simula a gravação automaticamente.
+func (e *Engine) sendAudioURL(ctx context.Context, lead *Lead, audioURL string) error {
+	e.gate.Acquire(lead.SessionID, lead.Phone)
+
+	if err := e.api.SendAudioURL(ctx, lead.SessionID, lead.Phone, audioURL); err != nil {
+		e.gate.Done(lead.SessionID, lead.Phone)
+		log.Printf("[engine] send audio lead %d: %v", lead.ID, err)
+		return err
+	}
+	_ = e.db.InsertMessage(ctx, lead.ID, "outbound", "[audio]", "audio", "", lead.SessionID)
+	e.db.LogEvent(ctx, lead.ID, "outbound", map[string]any{"type": "audio", "url": audioURL})
 
 	e.gate.Done(lead.SessionID, lead.Phone)
 	return nil

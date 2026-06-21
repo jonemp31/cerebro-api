@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -36,6 +38,15 @@ func (c *APIClient) SendPix(ctx context.Context, sessionID, phone, keyType, name
 	return c.post(ctx, fmt.Sprintf("/sessions/%s/send/pix", sessionID), body)
 }
 
+// SendAudioURL — envia áudio via URL. A api-escala baixa o arquivo e simula gravação.
+func (c *APIClient) SendAudioURL(ctx context.Context, sessionID, phone, audioURL string) error {
+	form := url.Values{
+		"phone": {phone},
+		"url":   {audioURL},
+	}
+	return c.postForm(ctx, fmt.Sprintf("/sessions/%s/send/audio", sessionID), form)
+}
+
 // SendTyping — mostra "digitando..." por durationMs. Retorna na hora (a api só
 // aciona o indicador e agenda parar); quem espera a duração é o chamador.
 func (c *APIClient) SendTyping(ctx context.Context, sessionID, chatID string, durationMs int) error {
@@ -49,6 +60,24 @@ func (c *APIClient) post(ctx context.Context, path string, body []byte) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("api %s -> %d: %s", path, resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+func (c *APIClient) postForm(ctx context.Context, path string, form url.Values) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
