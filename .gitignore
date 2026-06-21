@@ -1,0 +1,13 @@
+# segredos / ambiente
+.env
+
+# dependências / build (conforme a stack escolhida)
+/node_modules/
+/dist/
+/build/
+/bin/
+*.exe
+
+# logs / temporários
+*.log
+/tmp/
