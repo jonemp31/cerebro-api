@@ -31,6 +31,15 @@ func isArmedStep(step string) bool {
 		step == stepCallRevival
 }
 
+// isPaymentStep — retorna true se o step está aguardando pagamento (polling ativo).
+func isPaymentStep(step string) bool {
+	switch step {
+	case stepPixSent, stepPixSent2, stepPixSent2Fu, stepUpsellPixSent, stepUpsellPixSentFu:
+		return true
+	}
+	return false
+}
+
 // InboundJob — uma mensagem (ou lote debounced) recebida de um lead.
 type InboundJob struct {
 	Phone     string
@@ -64,8 +73,8 @@ func (e *Engine) HandleInbound(ctx context.Context, j *InboundJob) {
 	e.db.LogEvent(ctx, lead.ID, "inbound", map[string]any{"body": j.Body, "step": lead.Step})
 
 	// Cancela timers pendentes (o lead respondeu) — exceto para steps com chamada
-	// armada, onde o re-arm_call precisa sobreviver.
-	if !isArmedStep(lead.Step) {
+	// armada ou pagamento pendente, onde o re-arm/polling precisa sobreviver.
+	if !isArmedStep(lead.Step) && !isPaymentStep(lead.Step) {
 		_ = e.db.CancelActions(ctx, lead.ID)
 	}
 
