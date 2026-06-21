@@ -549,10 +549,10 @@ func (e *Engine) sendDynamicPixAmount(ctx context.Context, lead *Lead, minAmount
 	amountCents := int(amount * 100)
 	_ = e.db.InsertPayment(ctx, lead.ID, "nexus", charge.ID, amountCents, charge.PixCopiaCola)
 
-	// Envia via WhatsApp com a chave dinâmica
+	// Envia via WhatsApp com a chave fixa de telefone
 	e.gate.Acquire(lead.SessionID, lead.Phone)
 	e.typing(ctx, lead, cfgTypingBase)
-	if err := e.api.SendPix(ctx, lead.SessionID, lead.Phone, "EVP", pixName, charge.PixCopiaCola, ""); err != nil {
+	if err := e.api.SendPix(ctx, lead.SessionID, lead.Phone, pixKeyType, pixName, pixKey, ""); err != nil {
 		e.gate.Done(lead.SessionID, lead.Phone)
 		log.Printf("[engine] send dynamic pix lead %d: %v", lead.ID, err)
 		return err

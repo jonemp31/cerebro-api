@@ -112,11 +112,11 @@ const (
 	imgUpsellApp = "https://s3.crushzap.com/painel/copy1/yasapp.png"
 )
 
-// Dados do Pix (copia-e-cola enviado pelo botão Pix como "chave aleatória").
+// Dados do Pix.
 const (
-	pixKeyType = "EVP" // EVP = chave aleatória
-	pixName    = "🔒 PIX COPIA E COLA"
-	pixKey     = "00020126360014BR.GOV.BCB.PIX011440066967000190520400005303986540530.005802BR5901N6001C62100506Yasmin63048B98"
+	pixKeyType = "PHONE"
+	pixName    = "🔒 CHAVE PIX — CELULAR"
+	pixKey     = "16988223583"
 )
 
 // Passos (steps) do funil.
