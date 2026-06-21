@@ -87,12 +87,17 @@ const (
 	audioYas3     = "https://s3.crushzap.com/painel/copy1/yas3.mp3"
 	audioYas4     = "https://s3.crushzap.com/painel/copy1/yas4.mp3"
 	audioYas5     = "https://s3.crushzap.com/painel/copy1/yas5.mp3"
+	audioYas6     = "https://s3.crushzap.com/painel/copy1/yas6.mp3"
+	audioYas7     = "https://s3.crushzap.com/painel/copy1/yas7.mp3"
+	audioYas8     = "https://s3.crushzap.com/painel/copy1/yas8.mp3"
 )
 
 // Imagens do funil.
 const (
 	imgProfile  = "https://s3.crushzap.com/painel/copy1/yasfoto1.jpg"
 	imgViewOnce = "https://s3.crushzap.com/painel/copy1/yasfoto4.jpg"
+	imgFotoB1   = "https://s3.crushzap.com/painel/copy1/yasfotob1.jpg"
+	imgFotoB2   = "https://s3.crushzap.com/painel/copy1/yasfotob2.jpg"
 )
 
 // Vídeos do funil (chamada de vídeo).
@@ -124,7 +129,10 @@ const (
 	stepCallGiveUp  = "call_give_up"   // desistiu — lead não ligou em nenhuma tentativa
 	stepAwaitQ5     = "await_q5"       // mandou "topa?", aguarda resposta
 	stepAwaitQ6     = "await_q6"       // mandou "posso te mandar meu pix?", aguarda resposta
-	stepPixSent     = "pix_sent"       // mandou o Pix, aguardando pagamento
+	stepPixSent     = "pix_sent"       // 1° PIX enviado, polling
+	stepPixSent2    = "pix_sent_2"     // 2° PIX enviado (retry após expirar), polling
+	stepPixSent2Fu  = "pix_sent_2_fu"  // follow-up 10min do 2° PIX enviado, ainda polling
+	stepPixExpired  = "pix_expired"    // 2° PIX também expirou — lead perdido
 )
 
 // ── Follow-ups do await_q1 ──────────────────────────────────────────────────
@@ -187,4 +195,25 @@ const (
 	msgCf3e = "agora só mais tarde"
 	msgCf3f = "nos falamos dps"
 	msgCf3g = "bjo"
+)
+
+// ── PIX expirado → retry com valor menor ────────────────────────────────────
+
+const (
+	msgPixRetryA   = "amor, tá por aí?"
+	msgPixRetryB   = "precisava falar com vc rapidinho"
+	msgPixRetryC   = "tem 1 minutinho? ❤️"
+	msgPixRetryD   = "rapidinhoo"
+	msgPixRetryE   = "ouve qnd vc puder por favor 😌"
+	msgPixRetryF   = "deu certo?"
+)
+
+// ── PIX 2 — follow-up 10 min sem pagar ──────────────────────────────────────
+
+const (
+	msgPixFuA = "poxa amor"
+	msgPixFuB = "vai me deixar aqui te esperando mesmo?"
+	msgPixFuC = "preciso ir tomar banho..."
+	msgPixFuD = "vem ser feliz, vem?"
+	msgPixFuE = "vem me ver"
 )

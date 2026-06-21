@@ -193,8 +193,17 @@ func (e *Engine) advance(ctx context.Context, lead *Lead) {
 		time.Sleep(29 * time.Second)
 		e.sendPixSequence(ctx, lead)
 
-	case stepPixSent: // aguardando pagamento (próxima fase)
-		log.Printf("[engine] lead %d já no passo pix_sent (aguardando pagamento)", lead.ID)
+	case stepPixSent: // aguardando pagamento (1° PIX)
+		log.Printf("[engine] lead %d mandou msg enquanto aguarda pagamento (step=pix_sent)", lead.ID)
+
+	case stepPixSent2: // aguardando pagamento (2° PIX)
+		log.Printf("[engine] lead %d mandou msg enquanto aguarda pagamento retry (step=pix_sent_2)", lead.ID)
+
+	case stepPixSent2Fu: // aguardando pagamento (2° PIX, pós follow-up)
+		log.Printf("[engine] lead %d mandou msg enquanto aguarda pagamento retry fu (step=pix_sent_2_fu)", lead.ID)
+
+	case stepPixExpired: // 2° PIX expirou — lead perdido
+		log.Printf("[engine] lead %d em pix_expired (lead perdido)", lead.ID)
 
 	default:
 		log.Printf("[engine] passo desconhecido %q (lead %d)", lead.Step, lead.ID)
@@ -252,10 +261,10 @@ func (e *Engine) HandleTimer(ctx context.Context, a *Action) {
 		// Timeout 4 min — lead não respondeu, continua mesmo assim (sem delay extra)
 		e.sendPixSequence(ctx, lead)
 
-	case stepPixSent:
+	case stepPixSent, stepPixSent2, stepPixSent2Fu:
 		// Polling de pagamento
 		if a.Kind == "payment_check" {
-			e.checkPayment(ctx, lead)
+			e.checkPayment(ctx, lead, a)
 		}
 	}
 }
@@ -455,10 +464,14 @@ func (e *Engine) sendPixSequence(ctx context.Context, lead *Lead) {
 	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), nil)
 }
 
-// sendDynamicPix — cria cobrança no gateway e envia a chave Pix dinâmica.
+// sendDynamicPix — cria cobrança com valor 29.01–29.99 e envia.
 func (e *Engine) sendDynamicPix(ctx context.Context, lead *Lead) error {
-	// Valor aleatório entre 29.01 e 29.99
-	amount := 29.01 + rand.Float64()*0.98
+	return e.sendDynamicPixAmount(ctx, lead, 29.01, 29.99)
+}
+
+// sendDynamicPixAmount — cria cobrança no gateway com valor aleatório e envia a chave Pix.
+func (e *Engine) sendDynamicPixAmount(ctx context.Context, lead *Lead, minAmount, maxAmount float64) error {
+	amount := minAmount + rand.Float64()*(maxAmount-minAmount)
 	amount = math.Round(amount*100) / 100
 
 	charge, err := e.pay.CreateCharge(ctx, lead.Phone, amount, "Oferta1")
@@ -487,40 +500,114 @@ func (e *Engine) sendDynamicPix(ctx context.Context, lead *Lead) error {
 }
 
 // checkPayment — consulta o status do pagamento no gateway.
-func (e *Engine) checkPayment(ctx context.Context, lead *Lead) {
+func (e *Engine) checkPayment(ctx context.Context, lead *Lead, a *Action) {
 	chargeID, err := e.db.GetPendingPayment(ctx, lead.ID)
 	if err != nil {
 		log.Printf("[engine] get pending payment lead %d: %v", lead.ID, err)
 		return
 	}
 
+	// Contador de checks (payload "n")
+	checkCount := 0
+	if a.Payload != nil {
+		if n, ok := a.Payload["n"]; ok {
+			if nf, ok := n.(float64); ok {
+				checkCount = int(nf)
+			}
+		}
+	}
+
 	status, err := e.pay.CheckStatus(ctx, chargeID)
 	if err != nil {
 		log.Printf("[engine] check payment lead %d: %v", lead.ID, err)
-		// Reagenda em caso de erro de rede
-		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), nil)
+		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(checkCount)})
 		return
 	}
 
-	log.Printf("[engine] payment check lead=%d charge=%s status=%s", lead.ID, chargeID, status)
+	log.Printf("[engine] payment check lead=%d charge=%s status=%s count=%d step=%s", lead.ID, chargeID, status, checkCount, lead.Step)
 
 	switch status {
 	case "paid":
+		_ = e.db.CancelActions(ctx, lead.ID)
 		_ = e.db.UpdatePaymentStatus(ctx, chargeID, "paid")
 		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": "paid", "charge_id": chargeID})
-		log.Printf("[engine] 💰 lead %d PAGOU! charge=%s", lead.ID, chargeID)
+		log.Printf("[engine] \xf0\x9f\x92\xb0 lead %d PAGOU! charge=%s", lead.ID, chargeID)
 		e.goTo(ctx, lead, "paid", "paid")
-		// TODO: sequência de compra aprovada
+		// TODO: sequ\xc3\xaancia de compra aprovada
+
 	case "pending":
-		// Reagenda em 20s
-		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), nil)
+		nextCount := checkCount + 1
+
+		// 2\xc2\xb0 PIX: ap\xc3\xb3s 20 checks (~10 min), envia follow-up (uma vez)
+		if lead.Step == stepPixSent2 && nextCount >= 20 {
+			e.sendPixRetryFollowUp(ctx, lead)
+		}
+
+		_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(nextCount)})
+
 	case "expired", "cancelled":
 		_ = e.db.UpdatePaymentStatus(ctx, chargeID, status)
 		e.db.LogEvent(ctx, lead.ID, "payment", map[string]any{"status": status, "charge_id": chargeID})
-		log.Printf("[engine] lead %d payment %s: charge=%s", lead.ID, status, chargeID)
-		// TODO: handle expired/cancelled
+
+		if lead.Step == stepPixSent {
+			// 1\xc2\xb0 PIX expirou \xe2\x86\x92 retry com valor menor
+			log.Printf("[engine] lead %d PIX expirou \xe2\x80\x94 enviando retry", lead.ID)
+			e.sendPixRetrySequence(ctx, lead)
+		} else {
+			// 2\xc2\xb0 PIX expirou \xe2\x86\x92 lead perdido
+			log.Printf("[engine] lead %d 2\xc2\xb0 PIX expirou \xe2\x80\x94 desistindo", lead.ID)
+			e.goTo(ctx, lead, "lost", stepPixExpired)
+		}
 	}
 }
+
+// sendPixRetrySequence \xe2\x80\x94 1\xc2\xb0 PIX expirou \xe2\x86\x92 mensagens + \xc3\xa1udios + novo PIX menor.
+func (e *Engine) sendPixRetrySequence(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgPixRetryA) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPixRetryB) != nil { return }
+	time.Sleep(20 * time.Second)
+	if e.send(ctx, lead, msgPixRetryC) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPixRetryD) != nil { return }
+	time.Sleep(90 * time.Second)
+	if e.sendAudioURL(ctx, lead, audioYas6) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.sendAudioURL(ctx, lead, audioYas7) != nil { return }
+	time.Sleep(6 * time.Second)
+	if e.sendAudioURL(ctx, lead, audioYas8) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgPixRetryE) != nil { return }
+	time.Sleep(31 * time.Second)
+
+	// Gera novo PIX com valor menor (20.01\xe2\x80\x9320.99)
+	if e.sendDynamicPixAmount(ctx, lead, 20.01, 20.99) != nil { return }
+
+	time.Sleep(22 * time.Second)
+	if e.send(ctx, lead, msgPixRetryF) != nil { return }
+
+	e.goTo(ctx, lead, "awaiting_payment", stepPixSent2)
+	_ = e.db.ScheduleAction(ctx, lead.ID, "payment_check", time.Now().Add(30*time.Second), map[string]any{"n": float64(0)})
+}
+
+// sendPixRetryFollowUp \xe2\x80\x94 2\xc2\xb0 PIX pendente h\xc3\xa1 10 min \xe2\x86\x92 fotos + insist\xc3\xaancia.
+func (e *Engine) sendPixRetryFollowUp(ctx context.Context, lead *Lead) {
+	if e.send(ctx, lead, msgPixFuA) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPixFuB) != nil { return }
+	time.Sleep(10 * time.Second)
+	if e.send(ctx, lead, msgPixFuC) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.sendImageURL(ctx, lead, imgFotoB1, "", false) != nil { return }
+	time.Sleep(3 * time.Second)
+	if e.sendImageURL(ctx, lead, imgFotoB2, "", false) != nil { return }
+	time.Sleep(15 * time.Second)
+	if e.send(ctx, lead, msgPixFuD) != nil { return }
+	time.Sleep(5 * time.Second)
+	if e.send(ctx, lead, msgPixFuE) != nil { return }
+	e.goTo(ctx, lead, "awaiting_payment", stepPixSent2Fu)
+}
+
 
 // HandleCallEvent — processa eventos de chamada (aceita, expirada).
 func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
