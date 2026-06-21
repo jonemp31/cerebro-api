@@ -948,7 +948,7 @@ func (e *Engine) HandleCallEvent(ctx context.Context, ev *CallEventJob) {
 			armed := e.calls.GetAll(ev.SessionID)
 			for _, al := range armed {
 				if al.Phone == lead.Phone {
-					_ = e.db.ScheduleAction(ctx, lead.ID, "rearm_call", time.Now().Add(2*time.Minute),
+					_ = e.db.ScheduleAction(ctx, lead.ID, "rearm_call", time.Now().Add(1*time.Minute),
 						map[string]any{"video": al.VideoURL})
 					break
 				}
@@ -973,7 +973,7 @@ func (e *Engine) notifyAndRearmOthers(ctx context.Context, sessionID string, oth
 			}
 			log.Printf("[engine] notificando lead %d (sessão ocupada) — re-arm em 2 min", al.LeadID)
 			e.send(ctx, otherLead, msgCallBusy)
-			_ = e.db.ScheduleAction(ctx, al.LeadID, "rearm_call", time.Now().Add(2*time.Minute),
+			_ = e.db.ScheduleAction(ctx, al.LeadID, "rearm_call", time.Now().Add(1*time.Minute),
 				map[string]any{"video": al.VideoURL})
 		}(al)
 	}
